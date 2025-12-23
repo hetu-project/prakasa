@@ -137,6 +137,7 @@ if __name__ == "__main__":
                 kvcache_mem_ratio=args.kvcache_mem_ratio,
                 shared_state=shared_state.dict,  # Pass dict to subprocess
                 log_level=args.log_level,
+                account=getattr(args, "account", None),
             )
 
             # Launch all executor processes (including tp_rank=0)
@@ -185,6 +186,7 @@ if __name__ == "__main__":
                 kvcache_mem_ratio=args.kvcache_mem_ratio,
                 shared_state=shared_state.dict,  # Pass dict to subprocess
                 log_level=args.log_level,
+                account=getattr(args, "account", None),
             )
 
             # Wait for layer allocation from scheduler (via shared state)

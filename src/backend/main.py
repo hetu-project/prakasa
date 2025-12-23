@@ -180,6 +180,49 @@ async def cluster_status_json() -> JSONResponse:
     return JSONResponse(content=scheduler_manage.get_cluster_status(), status_code=200)
 
 
+@app.get("/node/status/{account}")
+async def get_node_status_by_account(account: str):
+    """
+    Get detailed worker node status by EVM address (account).
+    
+    Args:
+        account: EVM address of the worker node (e.g., 0x789...)
+    
+    Returns:
+        Detailed node information including:
+        - Basic info: node_id, account, status
+        - Hardware: GPU info, memory, compute power
+        - Layer allocation: start_layer, end_layer, num_layers
+        - Performance: current_requests, max_requests, latency
+        - Network: RTT to other nodes
+        - Timing: last_heartbeat, last_refit_time
+    """
+    if scheduler_manage is None:
+        return JSONResponse(
+            content={"error": "Scheduler is not initialized"},
+            status_code=503,
+        )
+    
+    node_info = scheduler_manage.get_node_by_account(account)
+    
+    if node_info is None:
+        return JSONResponse(
+            content={
+                "type": "node_status",
+                "error": f"Node with account {account} not found",
+            },
+            status_code=404,
+        )
+    
+    return JSONResponse(
+        content={
+            "type": "node_status",
+            "data": node_info,
+        },
+        status_code=200,
+    )
+
+
 @app.post("/v1/chat/completions")
 async def openai_v1_chat_completions(raw_request: Request):
     request_data = await raw_request.json()

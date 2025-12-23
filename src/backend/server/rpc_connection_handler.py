@@ -195,6 +195,7 @@ class RPCConnectionHandler(ConnectionHandler):
             is_active=node_json.get("is_active", True),
             manual_layer_assignment=node_json.get("manual_layer_assignment", False),
             last_refit_time=node_json.get("last_refit_time", 0.0),
+            account=node_json.get("account"),
         )
         if node_json.get("start_layer", None) is not None:
             node.start_layer = node_json.get("start_layer")

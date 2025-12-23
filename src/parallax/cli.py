@@ -244,6 +244,10 @@ def join_command(args, passthrough_args: list[str] | None = None):
     # The scheduler address is now taken directly from the parsed arguments.
     cmd.extend(["--scheduler-addr", args.scheduler_addr])
 
+
+    if args.account is not None:
+        cmd.extend(["--account", args.account])
+
     # Relay logic based on effective scheduler address
     if args.use_relay or (
         args.scheduler_addr != "auto" and not str(args.scheduler_addr).startswith("/")
@@ -398,6 +402,12 @@ Examples:
     )
     join_parser.add_argument(
         "-u", "--skip-upload", action="store_true", help="Skip upload package info"
+    )
+    join_parser.add_argument(
+        "--account",
+        type=str,
+        default=None,
+        help="EVM address for the worker node (e.g., 0x789...)",
     )
 
     # Add 'chat' command parser

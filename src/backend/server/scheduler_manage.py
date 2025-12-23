@@ -153,14 +153,78 @@ class SchedulerManage:
 
         return [self.build_node_info(node) for node in self.scheduler.nodes]
 
-    def build_node_info(self, node):
-        return {
+    def build_node_info(self, node, detailed: bool = False):
+        """Build node information dictionary.
+        
+        Args:
+            node: Node object
+            detailed: If True, include detailed information like performance metrics
+        """
+        info = {
             "node_id": node.node_id,
             "status": NODE_STATUS_AVAILABLE if node.is_active else NODE_STATUS_WAITING,
             "gpu_num": node.hardware.num_gpus,
             "gpu_name": node.hardware.gpu_name,
             "gpu_memory": node.hardware.memory_gb,
         }
+        
+        if node.account is not None:
+            info["account"] = node.account
+
+        if detailed:
+            info.update({
+                "device": node.hardware.device,
+                "tflops_fp16": node.hardware.tflops_fp16,
+                "memory_bandwidth_gbps": node.hardware.memory_bandwidth_gbps,
+                "start_layer": node.start_layer,
+                "end_layer": node.end_layer,
+                "num_layers": node.num_current_layers if node.start_layer is not None and node.end_layer is not None else 0,
+                "current_requests": node.current_requests,
+                "max_requests": node.max_requests,
+                "max_concurrent_requests": node.max_concurrent_requests,
+                "max_sequence_length": node.max_sequence_length,
+                "avg_layer_latency_ms": node.avg_layer_latency_ms,
+                "layer_latency_ms": node.layer_latency_ms,
+                "is_overloaded": node.is_overloaded,
+                "last_heartbeat": node.last_heartbeat,
+                "last_refit_time": node.last_refit_time,
+                "kvcache_mem_ratio": node.kvcache_mem_ratio,
+                "param_mem_ratio": node.param_mem_ratio,
+                "manual_layer_assignment": node.manual_layer_assignment,
+            })
+   
+            if node.rtt_to_nodes:
+                info["rtt_to_nodes"] = node.rtt_to_nodes
+        
+        return info
+    
+    def get_node_by_account(self, account: str):
+        """Get node information by EVM address (account).
+        
+        Args:
+            account: EVM address of the worker node
+            
+        Returns:
+            Node information dictionary if found, None otherwise
+        """
+        if self.scheduler is None:
+            logger.warning("Scheduler is None, cannot search for node by account")
+            return None
+        
+        logger.debug(f"Searching for node with account: {account}")
+        logger.debug(f"Total nodes in scheduler: {len(self.scheduler.nodes)}")
+        
+
+        for node in self.scheduler.nodes:
+            logger.debug(f"Node {node.node_id}: account={node.account}")
+            if node.account and node.account.lower() == account.lower():
+                logger.info(f"Found node {node.node_id} with account {account}")
+                return self.build_node_info(node, detailed=True)
+        
+
+        accounts = [node.account for node in self.scheduler.nodes if node.account]
+        logger.warning(f"No node found with account {account}. Available accounts: {accounts}")
+        return None
 
     def _start_scheduler(self, model_name, init_nodes_num):
         """

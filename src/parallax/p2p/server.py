@@ -230,6 +230,7 @@ class GradientServer:
         max_sequence_length: Optional[int] = None,
         param_mem_ratio: float = 0.65,
         kvcache_mem_ratio: float = 0.25,
+        account: Optional[str] = None,
     ):
         self.recv_from_peer_addr = recv_from_peer_addr
         self.send_to_peer_addr = send_to_peer_addr
@@ -250,6 +251,7 @@ class GradientServer:
         self.max_sequence_length = max_sequence_length
         self.param_mem_ratio = param_mem_ratio
         self.kvcache_mem_ratio = kvcache_mem_ratio
+        self.account = account
         self.enable_weight_refit = False
         self.last_refit_time = 0.0
         self.prefix_id = f"{dht_prefix}_announce"
@@ -856,6 +858,8 @@ class GradientServer:
             "is_active": self._get_status() == ServerState.READY.value,
             "last_refit_time": self.last_refit_time,
         }
+        if self.account is not None:
+            info["account"] = self.account
 
         # For manual layer assignment, always include start_layer and end_layer
         if self.manual_layer_assignment:
@@ -951,6 +955,7 @@ def _run_p2p_server_process(
             max_sequence_length=max_sequence_length,
             param_mem_ratio=param_mem_ratio,
             kvcache_mem_ratio=kvcache_mem_ratio,
+            account=account,
         )
         # Attach shared state to server for syncing layer allocation
         if shared_state is not None:
@@ -999,6 +1004,7 @@ def launch_p2p_server_process(
     kvcache_mem_ratio: float = 0.25,
     shared_state: Optional[dict] = None,
     log_level: str = "INFO",
+    account: Optional[str] = None,
 ) -> multiprocessing.Process:
     """Launch P2P server as a subprocess and return the process object
 

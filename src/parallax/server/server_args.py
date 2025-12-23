@@ -275,6 +275,13 @@ def parse_args() -> argparse.Namespace:
         help="Whether to use local Hugging Face cache only (no network download)",
     )
 
+    parser.add_argument(
+        "--account",
+        type=str,
+        default=None,
+        help="EVM address for the worker node (e.g., 0x789...)",
+    )
+
     args = parser.parse_args()
 
     # Validate arguments
