@@ -1,59 +1,70 @@
 <div align="center">
-  <p align="center">
-    <img src="docs/images/parallax.png" width="720">
-    <div align="center">
-      <p style="font-size: 1.3em; font-weight: 600; margin-bottom: 10px;">Trusted by Partners</p>
-      <img src="docs/images/qwen.avif" alt="Qwen" height="30" style="margin: 0 20px;">
-      <img src="docs/images/sglang.png" alt="SGLang" height="28" style="margin: 0 20px;">
-      <img src="docs/images/kimi.png" alt="Kimi" height="30" style="margin: 0 20px;">
-      <img src="docs/images/minimax.png" alt="Minimax" height="30" style="margin: 0 10px;">
-      <img src="docs/images/zai.svg"za alt="ZAI" height="30" style="margin: 0 10px;"/>
-    </div>
+  <h1>Prakasa — Decentralized P2P GPU Inference Network</h1>
+  <p style="font-size:1.05em; margin-top:6px;">Prakasa (Sanskrit: प्रकाश) — The decentralized "Light" of intelligence.</p>
+  <p style="max-width:900px; margin:12px auto;">
+    Prakasa is a decentralized, privacy-preserving P2P GPU inference middleware built on top of the open-source Parallax engine. It leverages the Nostr protocol for resilient, censorship-resistant orchestration and integrates the RIM economic system for trustless, real-time settlements and reputation.
   </p>
 
-[![license](https://img.shields.io/github/license/GradientHQ/parallax.svg)](https://github.com/GradientHQ/parallax/tree/main/LICENSE)
-[![issue resolution](https://img.shields.io/github/issues-closed-raw/GradientHQ/parallax)](https://github.com/GradientHQ/parallax/issues)
-[![open issues](https://img.shields.io/github/issues-raw/GradientHQ/parallax)](https://github.com/GradientHQ/parallax/issues)
 
-<a href="https://www.producthunt.com/products/parallax-by-gradient?embed=true&utm_source=badge-top-post-badge&utm_medium=badge&utm_source=badge-parallax&#0045;by&#0045;gradient" target="_blank"><img src="https://api.producthunt.com/widgets/embed-image/v1/top-post-badge.svg?post_id=1030922&theme=light&period=daily&t=1761986433128" alt="Parallax&#0032;by&#0032;Gradient - Host&#0032;LLMs&#0032;across&#0032;devices&#0032;sharing&#0032;GPU&#0032;to&#0032;make&#0032;your&#0032;AI&#0032;go&#0032;brrr | Product Hunt" style="width: 250px; height: 54px;" width="250" height="54" /></a>
+  [![license](https://img.shields.io/github/license/hetu-project/prakasa.svg)](https://github.com/hetu-project/prakasa/tree/main/LICENSE)
+  [![issue resolution](https://img.shields.io/github/issues-closed-raw/hetu-project/prakasa)](https://github.com/hetu-project/prakasa/issues)
+  [![open issues](https://img.shields.io/github/issues-raw/hetu-project/prakasa)](https://github.com/hetu-project/prakasa/issues)
 
 </div>
 
-| [**Gradient**](https://gradient.network)
-| [**Blog**](https://gradient.network/blog/parallax-the-sovereign-ai-os)
-| [**X(Twitter)**](https://x.com/Gradient_HQ)
-| [**Discord**](https://discord.gg/parallax)
-| [**Arxiv**](https://arxiv.org/pdf/2509.26182v1)
+## What is Prakasa
 
-## News
-- [2025/10] 🔥 Parallax won #1 Product of The Day on Product Hunt!
-- [2025/10] 🔥 Parallax version 0.0.1 has been released!
+Prakasa is a high-performance, privacy-centric P2P GPU inference middleware that transforms idle GPU resources into a unified, resilient intelligence layer. By evolving the Parallax orchestration engine and integrating modern decentralized primitives, Prakasa enables secure, incentivized model deployment across heterogeneous devices.
 
-## About
-A fully decentralized inference engine developed by [Gradient](https://gradient.network). Parallax lets you build your own AI cluster for model inference onto a set of distributed nodes despite their varying configuration and physical location. Its core features include:
+## Key Pillars
 
-- **Host local LLM on personal devices**
-- **Cross-platform support**
-- **Pipeline parallel model sharding**
-- **Dynamic KV cache management & continuous batching for Mac**
-- **Dynamic request scheduling and routing for high performance**
+- **Nostr-Powered Orchestration**: Uses the Nostr protocol as a decentralized communication bus.
 
-The backend architecture:
+  - Resilience: No single point of failure for node discovery and task distribution.
+  - Privacy: Uses NIP-44/59 (Gift Wrap) for encrypted metadata and secure client-provider signaling.
+  - Interoperability: Integrates with the broader Nostr ecosystem for monitoring and management.
 
-* P2P communication powered by [Lattica](https://github.com/GradientHQ/lattica)
-* GPU backend powered by [SGLang](https://github.com/sgl-project/sglang)
-* MAC backend powered by [MLX LM](https://github.com/ml-explore/mlx-lm)
+- **RIM Economic System**: Robust Incentive Mechanism adapted for P2P compute markets.
 
-## User Guide
+  - Atomic Settlements: Real-time micropayments per inference.
+  - Market Pricing: Dynamic supply-demand pricing to fairly compensate providers.
+  - Sybil Resistance: Staking and reputation to ensure high-quality compute.
 
-- [Installation](./docs/user_guide/install.md)
-- [Getting Started](./docs/user_guide/quick_start.md)
+- **Privacy & Hardened Security**:
+
+  - Encrypted Payloads: End-to-end encryption of model weights and I/O.
+  - Isolated Execution: Stronger containerization for multi-tenant GPU workloads.
+  - Verifiable Computation (Roadmap): Zero-knowledge proofs for verifiable results.
+
+- **Evolution of Parallax**: Built on Parallax’s core, extended for global P2P scale.
+  - Stateless discovery replacing central APIs with Nostr relays.
+  - Modular settlement integrating the RIM protocol.
+
+## Architecture Overview
+
+Prakasa is organized as a middleware stack bridging raw hardware and AI applications:
+
+- **Infrastructure Layer**: Global P2P GPU nodes running the Prakasa-Parallax runtime.
+- **Communication Bus (Nostr)**: Task relaying, heartbeat monitoring, encrypted handshakes, and discovery.
+- **Settlement Layer (RIM)**: Manages instant value transfers ("Spanda") and on-chain/off-chain reconciliations.
+- **Application Layer**: SDKs and APIs for developers to consume compute-as-a-service with privacy and incentives built-in.
+
+## Getting Started
+
+- Installation and local dev instructions: see [docs/user_guide/install.md](./docs/user_guide/install.md)
+- Quick start: see [docs/user_guide/quick_start.md](./docs/user_guide/quick_start.md)
 
 ## Contributing
 
-We warmly welcome contributions of all kinds! For guidelines on how to get involved, please refer to our [Contributing Guide](./docs/CONTRIBUTING.md).
+We welcome contributions! See the [Contributing Guide](./docs/CONTRIBUTING.md) for how to get started. If you'd like Prakasa to integrate a specific settlement backend, relay implementation, or privacy primitive, please open an issue.
+
+## Notes
+
+- Prakasa is designed as an evolution and distribution of the Parallax project; this repository contains the foundational Parallax engine and components. Prakasa-specific modules (Nostr integration, RIM connectors, settlement adapters) are maintained in dedicated submodules and extensions.
 
 ## Supported Models
+
+The project also includes a catalog of supported models and integrations. See the table below for currently supported model families and collections.
 
 |              | Provider     | HuggingFace Collection  |  Blog  | Description |
 |:-------------|:-------------|:----------------------------:|:----------------------------:|:----------------------------|
