@@ -220,6 +220,7 @@ class GradientServer:
         block_end_index: int = 1,
         hidden_layers: int = 128,
         tp_size: int = 1,
+        dp_size: int = 1,
         dht_prefix: str = "gradient",
         host_maddrs: List[str] = [],
         http_port: Optional[int] = None,
@@ -241,6 +242,7 @@ class GradientServer:
         self.block_end_index = block_end_index
         self.hidden_layers = hidden_layers
         self.tp_size = tp_size
+        self.dp_size = dp_size
         self.dht_prefix = dht_prefix
         self.host_maddrs = host_maddrs
         self.announce_maddrs = announce_maddrs
@@ -911,6 +913,7 @@ def _run_p2p_server_process(
     pp_end_layer: int,
     hidden_layers: int,
     tp_size: int,
+    dp_size: int,
     tcp_port: int,
     udp_port: int,
     dht_prefix: str,
@@ -943,6 +946,7 @@ def _run_p2p_server_process(
             block_end_index=pp_end_layer,
             hidden_layers=hidden_layers,
             tp_size=tp_size,
+            dp_size=dp_size,
             dht_prefix=dht_prefix,
             host_maddrs=[
                 f"/ip4/0.0.0.0/tcp/{tcp_port}",
@@ -990,6 +994,7 @@ def launch_p2p_server_process(
     pp_end_layer: int,
     hidden_layers: int,
     tp_size: int,
+    dp_size: int,
     tcp_port: int,
     udp_port: int,
     dht_prefix: str,
@@ -1024,6 +1029,7 @@ def launch_p2p_server_process(
             pp_end_layer,
             hidden_layers,
             tp_size,
+            dp_size,
             tcp_port,
             udp_port,
             dht_prefix,
