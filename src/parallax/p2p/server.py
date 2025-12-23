@@ -926,6 +926,7 @@ def _run_p2p_server_process(
     kvcache_mem_ratio: float = 0.25,
     shared_state: Optional[dict] = None,
     log_level: str = "INFO",
+    account: Optional[str] = None,
 ):
     """Run P2P server in subprocess"""
     # Set log level in subprocess (spawn mode doesn't inherit log configuration)
@@ -1038,6 +1039,7 @@ def launch_p2p_server_process(
             kvcache_mem_ratio,
             shared_state,
             log_level,
+            account,
         ),
     )
     process.start()
