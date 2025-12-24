@@ -174,8 +174,8 @@ def _get_relay_params():
 
 def run_command(args, passthrough_args: list[str] | None = None):
     """Run the scheduler (equivalent to scripts/start.sh)."""
-    if not args.skip_upload:
-        update_package_info()
+    # if not args.skip_upload:
+    #     update_package_info()
 
     check_python_version()
 
@@ -212,8 +212,8 @@ def run_command(args, passthrough_args: list[str] | None = None):
 
 def join_command(args, passthrough_args: list[str] | None = None):
     """Join a distributed cluster (equivalent to scripts/join.sh)."""
-    if not args.skip_upload:
-        update_package_info()
+    # if not args.skip_upload:
+    #     update_package_info()
 
     check_python_version()
 
@@ -266,7 +266,7 @@ def join_command(args, passthrough_args: list[str] | None = None):
 
 
 def chat_command(args, passthrough_args: list[str] | None = None):
-    """Start the Parallax chat server (equivalent to scripts/chat.sh)."""
+    """Start the Prakasa chat server (equivalent to scripts/chat.sh)."""
     check_python_version()
 
     project_root = get_project_root()
@@ -358,16 +358,16 @@ def reversible_decode_string(encoded: str) -> str:
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Parallax - A fully decentralized inference engine developed by Gradient Network",
+        description="Prakasa - A decentralized, privacy-preserving P2P GPU inference network built on Parallax",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  parallax run                                                          # Start scheduler with frontend
-  parallax run -m {model-name} -n {number-of-worker-nodes}              # Start scheduler without frontend
-  parallax run -m Qwen/Qwen3-0.6B -n 2                                  # example
-  parallax join                                                         # Join cluster in local network
-  parallax join -s {scheduler-address}                                  # Join cluster in public network
-  parallax join -s 12D3KooWLX7MWuzi1Txa5LyZS4eTQ2tPaJijheH8faHggB9SxnBu # example
+  prakasa run                                                          # Start scheduler with frontend
+  prakasa run -m {model-name} -n {number-of-worker-nodes}              # Start scheduler without frontend
+  prakasa run -m Qwen/Qwen3-0.6B -n 2                                  # example
+  prakasa join                                                         # Join cluster in local network
+  prakasa join -s {scheduler-address}                                  # Join cluster in public network
+  prakasa join -s 12D3KooWLX7MWuzi1Txa5LyZS4eTQ2tPaJijheH8faHggB9SxnBu # example
         """,
     )
 
@@ -375,7 +375,7 @@ Examples:
 
     # Add 'run' command parser
     run_parser = subparsers.add_parser(
-        "run", help="Start the Parallax scheduler (equivalent to scripts/start.sh)"
+        "run", help="Start the Prakasa scheduler (equivalent to scripts/start.sh)"
     )
     run_parser.add_argument("-n", "--init-nodes-num", type=int, help="Number of initial nodes")
     run_parser.add_argument("-m", "--model-name", type=str, help="Model name")
@@ -412,7 +412,7 @@ Examples:
 
     # Add 'chat' command parser
     chat_parser = subparsers.add_parser(
-        "chat", help="Start the Parallax chat server (equivalent to scripts/chat.sh)"
+        "chat", help="Start the Prakasa chat server (equivalent to scripts/chat.sh)"
     )
     chat_parser.add_argument(
         "-s",

@@ -200,7 +200,7 @@ def display_ascii_animation_join(animation_data, model_name):
 
 
 def display_parallax_run():
-    file_path = str(get_project_root()) + "/src/parallax_utils/anime/parallax_run.json"
+    file_path = str(get_project_root()) + "/src/parallax_utils/anime/prakasa_run.json"
     try:
         with open(file_path, "r") as f:
             animation_data = json.load(f)

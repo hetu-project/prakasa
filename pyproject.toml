@@ -4,9 +4,9 @@ build-backend = "poetry.core.masonry.api"
 
 
 [project]
-name = "parallax"
+name = "prakasa"
 version = "0.1.2"
-description = "Decentralised pipeline-parallel LLM serving with Sglang + MLX-LM + Lattica"
+description = "Decentralized P2P GPU inference network built on Parallax"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 packages = [
@@ -37,7 +37,7 @@ dependencies = [
 ]
 
 [project.scripts]
-parallax = "parallax.cli:main"
+prakasa = "parallax.cli:main"
 
 [project.optional-dependencies]
 
