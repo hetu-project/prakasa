@@ -1,0 +1,33 @@
+# config.template.yaml - template for prakasa config
+# Top-level keys: run, join, chat
+
+run:
+  # Model to use when starting the scheduler
+  model_name: "Qwen/Qwen3-0.6B"
+  # Number of initial worker nodes
+  init_nodes_num: 2
+  # Whether to use relay servers (true/false)
+  use_relay: false
+  # Optional passthrough server port for backend
+  port: 3001
+  # Host for backend to bind to (e.g., 0.0.0.0)
+  host: "127.0.0.1"
+
+join:
+  # Scheduler address to connect to ("auto" or multiaddr)
+  scheduler_addr: "auto"
+  # Whether to use relay servers
+  use_relay: false
+  # Optional EVM account address for worker node
+  account: null
+  # Optional passthrough defaults for join command
+  max_num_tokens_per_batch: 4096
+  max_sequence_length: 2048
+  max_batch_size: 8
+  kv_block_size: 32
+
+chat:
+  # Scheduler address for chat client
+  scheduler_addr: "auto"
+  # Whether to use relay servers for chat
+  use_relay: false
