@@ -34,6 +34,7 @@ dependencies = [
   "dijkstar==2.6.0",
   "lattica==1.0.17",
   "orjson",
+  "pynostr"
 ]
 
 [project.scripts]
