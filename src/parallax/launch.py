@@ -122,6 +122,7 @@ if __name__ == "__main__":
                 pp_end_layer=args.end_layer,
                 hidden_layers=config.get("num_hidden_layers"),
                 tp_size=args.tp_size,
+                dp_size=args.dp_size,
                 tcp_port=args.tcp_port,
                 udp_port=args.udp_port,
                 dht_prefix=args.dht_prefix,
@@ -137,6 +138,7 @@ if __name__ == "__main__":
                 kvcache_mem_ratio=args.kvcache_mem_ratio,
                 shared_state=shared_state.dict,  # Pass dict to subprocess
                 log_level=args.log_level,
+                account=getattr(args, "account", None),
             )
 
             # Launch all executor processes (including tp_rank=0)
@@ -170,6 +172,7 @@ if __name__ == "__main__":
                 pp_end_layer=args.end_layer,
                 hidden_layers=None,
                 tp_size=args.tp_size,
+                dp_size=args.dp_size,
                 tcp_port=args.tcp_port,
                 udp_port=args.udp_port,
                 dht_prefix=args.dht_prefix,
@@ -185,6 +188,7 @@ if __name__ == "__main__":
                 kvcache_mem_ratio=args.kvcache_mem_ratio,
                 shared_state=shared_state.dict,  # Pass dict to subprocess
                 log_level=args.log_level,
+                account=getattr(args, "account", None),
             )
 
             # Wait for layer allocation from scheduler (via shared state)

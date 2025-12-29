@@ -191,6 +191,9 @@ class Node:
     # todo upload is_active
     is_active: bool = True
     last_heartbeat: float = 0.0
+
+    # EVM address for the worker node
+    account: Optional[str] = None
     # Will be updated by node broadcasting
     # otherwise, use roofline performance model to estimate
     avg_layer_latency_ms: Optional[float] = None

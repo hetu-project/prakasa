@@ -16,6 +16,10 @@ import subprocess
 import sys
 
 import requests
+try:
+    import yaml
+except Exception:
+    yaml = None
 
 from parallax_utils.file_util import get_project_root
 from parallax_utils.logging_config import get_logger
@@ -172,10 +176,113 @@ def _get_relay_params():
     ]
 
 
+def load_and_merge_config(args, passthrough_args: list[str] | None = None):
+    """Load YAML config (if provided) and merge values into parsed args.
+
+    Command-line arguments take precedence over config file values.
+    Returns (args, passthrough_args).
+    """
+    # Helper: check whether a flag was provided on the raw CLI (sys.argv)
+    def _cli_flag_provided(flag_names: list[str]) -> bool:
+        raw = sys.argv[1:]
+        if not raw:
+            return False
+        flags_set = set(flag_names)
+        for token in raw:
+            if token in flags_set:
+                return True
+            for flag in flags_set:
+                if token.startswith(flag + "="):
+                    return True
+        return False
+
+    # Load YAML config (if provided either before or after subcommand)
+    config_path = None
+    if getattr(args, "config", None):
+        config_path = args.config
+    else:
+        cfg = _find_flag_value(passthrough_args, ["--config"]) or _find_flag_value(sys.argv[1:], ["--config"]) if sys.argv else None
+        if cfg:
+            config_path = cfg
+
+    config_data = None
+    if config_path:
+        if yaml is None:
+            logger.error("PyYAML is required to load config files. Please install pyyaml.")
+            sys.exit(1)
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_data = yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.error(f"Failed to load config file {config_path}: {e}")
+            sys.exit(1)
+
+    # Merge config values for the chosen subcommand when CLI did not provide them.
+    if config_data and args.command:
+        cmd_conf = config_data.get(args.command, {}) if isinstance(config_data, dict) else {}
+        if not isinstance(cmd_conf, dict):
+            cmd_conf = {}
+
+        # run command options
+        if args.command == "run":
+            if not _cli_flag_provided(["-m", "--model-name"]) and "model_name" in cmd_conf:
+                args.model_name = cmd_conf.get("model_name")
+            if not _cli_flag_provided(["-n", "--init-nodes-num"]) and "init_nodes_num" in cmd_conf:
+                try:
+                    args.init_nodes_num = int(cmd_conf.get("init_nodes_num"))
+                except Exception:
+                    args.init_nodes_num = cmd_conf.get("init_nodes_num")
+            if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
+                args.use_relay = bool(cmd_conf.get("use_relay"))
+
+            # passthrough: e.g., --port
+            if "port" in cmd_conf and not _flag_present(passthrough_args, ["--port"]):
+                passthrough_args = passthrough_args or []
+                passthrough_args.extend(["--port", str(cmd_conf.get("port"))])
+            # passthrough: host (e.g., 0.0.0.0)
+            if (
+                "host" in cmd_conf
+                and not _flag_present(passthrough_args, ["--host"])
+                and not _cli_flag_provided(["--host"])
+            ):
+                passthrough_args = passthrough_args or []
+                passthrough_args.extend(["--host", str(cmd_conf.get("host"))])
+
+        # join command options
+        if args.command == "join":
+            if not _cli_flag_provided(["-s", "--scheduler-addr"]) and "scheduler_addr" in cmd_conf:
+                args.scheduler_addr = cmd_conf.get("scheduler_addr")
+            if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
+                args.use_relay = bool(cmd_conf.get("use_relay"))
+            if not _cli_flag_provided(["--account"]) and "account" in cmd_conf:
+                args.account = cmd_conf.get("account")
+
+            # join passthrough defaults (max-num-tokens-per-batch, etc.)
+            join_passthrough_flags = [
+                ("--max-num-tokens-per-batch", "max_num_tokens_per_batch"),
+                ("--max-sequence-length", "max_sequence_length"),
+                ("--max-batch-size", "max_batch_size"),
+                ("--kv-block-size", "kv_block_size"),
+            ]
+            for flag, key in join_passthrough_flags:
+                if key in cmd_conf and not _flag_present(passthrough_args, [flag]):
+                    passthrough_args = passthrough_args or []
+                    passthrough_args.extend([flag, str(cmd_conf.get(key))])
+
+        # chat command options
+        if args.command == "chat":
+            if not _cli_flag_provided(["-s", "--scheduler-addr"]) and "scheduler_addr" in cmd_conf:
+                args.scheduler_addr = cmd_conf.get("scheduler_addr")
+            if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
+                args.use_relay = bool(cmd_conf.get("use_relay"))
+
+    return args, passthrough_args
+
+
 def run_command(args, passthrough_args: list[str] | None = None):
     """Run the scheduler (equivalent to scripts/start.sh)."""
-    if not args.skip_upload:
-        update_package_info()
+    # if not args.skip_upload:
+    #     update_package_info()
 
     check_python_version()
 
@@ -212,8 +319,8 @@ def run_command(args, passthrough_args: list[str] | None = None):
 
 def join_command(args, passthrough_args: list[str] | None = None):
     """Join a distributed cluster (equivalent to scripts/join.sh)."""
-    if not args.skip_upload:
-        update_package_info()
+    # if not args.skip_upload:
+    #     update_package_info()
 
     check_python_version()
 
@@ -244,6 +351,10 @@ def join_command(args, passthrough_args: list[str] | None = None):
     # The scheduler address is now taken directly from the parsed arguments.
     cmd.extend(["--scheduler-addr", args.scheduler_addr])
 
+
+    if args.account is not None:
+        cmd.extend(["--account", args.account])
+
     # Relay logic based on effective scheduler address
     if args.use_relay or (
         args.scheduler_addr != "auto" and not str(args.scheduler_addr).startswith("/")
@@ -262,7 +373,7 @@ def join_command(args, passthrough_args: list[str] | None = None):
 
 
 def chat_command(args, passthrough_args: list[str] | None = None):
-    """Start the Parallax chat server (equivalent to scripts/chat.sh)."""
+    """Start the Prakasa chat server (equivalent to scripts/chat.sh)."""
     check_python_version()
 
     project_root = get_project_root()
@@ -354,24 +465,33 @@ def reversible_decode_string(encoded: str) -> str:
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Parallax - A fully decentralized inference engine developed by Gradient Network",
+        description="Prakasa - A decentralized, privacy-preserving P2P GPU inference network built on Parallax",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  parallax run                                                          # Start scheduler with frontend
-  parallax run -m {model-name} -n {number-of-worker-nodes}              # Start scheduler without frontend
-  parallax run -m Qwen/Qwen3-0.6B -n 2                                  # example
-  parallax join                                                         # Join cluster in local network
-  parallax join -s {scheduler-address}                                  # Join cluster in public network
-  parallax join -s 12D3KooWLX7MWuzi1Txa5LyZS4eTQ2tPaJijheH8faHggB9SxnBu # example
+  prakasa run                                                          # Start scheduler with frontend
+  prakasa run -m {model-name} -n {number-of-worker-nodes}              # Start scheduler without frontend
+  prakasa run -m Qwen/Qwen3-0.6B -n 2                                  # example
+  prakasa join                                                         # Join cluster in local network
+  prakasa join -s {scheduler-address}                                  # Join cluster in public network
+  prakasa join -s 12D3KooWLX7MWuzi1Txa5LyZS4eTQ2tPaJijheH8faHggB9SxnBu # example
         """,
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
+    # Global config file (YAML). Also added to subparsers below so it can appear
+    # after the subcommand on the CLI as well.
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to YAML config file (values used when CLI doesn't provide them)",
+    )
+
     # Add 'run' command parser
     run_parser = subparsers.add_parser(
-        "run", help="Start the Parallax scheduler (equivalent to scripts/start.sh)"
+        "run", help="Start the Prakasa scheduler (equivalent to scripts/start.sh)"
     )
     run_parser.add_argument("-n", "--init-nodes-num", type=int, help="Number of initial nodes")
     run_parser.add_argument("-m", "--model-name", type=str, help="Model name")
@@ -380,6 +500,12 @@ Examples:
     )
     run_parser.add_argument(
         "-u", "--skip-upload", action="store_true", help="Skip upload package info"
+    )
+    run_parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to YAML config file (values used when CLI doesn't provide them)",
     )
 
     # Add 'join' command parser
@@ -399,10 +525,22 @@ Examples:
     join_parser.add_argument(
         "-u", "--skip-upload", action="store_true", help="Skip upload package info"
     )
+    join_parser.add_argument(
+        "--account",
+        type=str,
+        default=None,
+        help="EVM address for the worker node (e.g., 0x789...)",
+    )
+    join_parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to YAML config file (values used when CLI doesn't provide them)",
+    )
 
     # Add 'chat' command parser
     chat_parser = subparsers.add_parser(
-        "chat", help="Start the Parallax chat server (equivalent to scripts/chat.sh)"
+        "chat", help="Start the Prakasa chat server (equivalent to scripts/chat.sh)"
     )
     chat_parser.add_argument(
         "-s",
@@ -414,9 +552,19 @@ Examples:
     chat_parser.add_argument(
         "-r", "--use-relay", action="store_true", help="Use public relay servers"
     )
+    chat_parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to YAML config file (values used when CLI doesn't provide them)",
+    )
 
     # Accept unknown args and pass them through to the underlying python command
     args, passthrough_args = parser.parse_known_args()
+
+    # Load and merge configuration (from YAML) into parsed args and passthrough_args
+    args, passthrough_args = load_and_merge_config(args, passthrough_args)
+
 
     if not args.command:
         parser.print_help()

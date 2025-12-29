@@ -220,6 +220,7 @@ class GradientServer:
         block_end_index: int = 1,
         hidden_layers: int = 128,
         tp_size: int = 1,
+        dp_size: int = 1,
         dht_prefix: str = "gradient",
         host_maddrs: List[str] = [],
         http_port: Optional[int] = None,
@@ -230,6 +231,7 @@ class GradientServer:
         max_sequence_length: Optional[int] = None,
         param_mem_ratio: float = 0.65,
         kvcache_mem_ratio: float = 0.25,
+        account: Optional[str] = None,
     ):
         self.recv_from_peer_addr = recv_from_peer_addr
         self.send_to_peer_addr = send_to_peer_addr
@@ -240,6 +242,7 @@ class GradientServer:
         self.block_end_index = block_end_index
         self.hidden_layers = hidden_layers
         self.tp_size = tp_size
+        self.dp_size = dp_size
         self.dht_prefix = dht_prefix
         self.host_maddrs = host_maddrs
         self.announce_maddrs = announce_maddrs
@@ -250,6 +253,7 @@ class GradientServer:
         self.max_sequence_length = max_sequence_length
         self.param_mem_ratio = param_mem_ratio
         self.kvcache_mem_ratio = kvcache_mem_ratio
+        self.account = account
         self.enable_weight_refit = False
         self.last_refit_time = 0.0
         self.prefix_id = f"{dht_prefix}_announce"
@@ -856,6 +860,8 @@ class GradientServer:
             "is_active": self._get_status() == ServerState.READY.value,
             "last_refit_time": self.last_refit_time,
         }
+        if self.account is not None:
+            info["account"] = self.account
 
         # For manual layer assignment, always include start_layer and end_layer
         if self.manual_layer_assignment:
@@ -907,6 +913,7 @@ def _run_p2p_server_process(
     pp_end_layer: int,
     hidden_layers: int,
     tp_size: int,
+    dp_size: int,
     tcp_port: int,
     udp_port: int,
     dht_prefix: str,
@@ -922,6 +929,7 @@ def _run_p2p_server_process(
     kvcache_mem_ratio: float = 0.25,
     shared_state: Optional[dict] = None,
     log_level: str = "INFO",
+    account: Optional[str] = None,
 ):
     """Run P2P server in subprocess"""
     # Set log level in subprocess (spawn mode doesn't inherit log configuration)
@@ -938,6 +946,7 @@ def _run_p2p_server_process(
             block_end_index=pp_end_layer,
             hidden_layers=hidden_layers,
             tp_size=tp_size,
+            dp_size=dp_size,
             dht_prefix=dht_prefix,
             host_maddrs=[
                 f"/ip4/0.0.0.0/tcp/{tcp_port}",
@@ -951,6 +960,7 @@ def _run_p2p_server_process(
             max_sequence_length=max_sequence_length,
             param_mem_ratio=param_mem_ratio,
             kvcache_mem_ratio=kvcache_mem_ratio,
+            account=account,
         )
         # Attach shared state to server for syncing layer allocation
         if shared_state is not None:
@@ -984,6 +994,7 @@ def launch_p2p_server_process(
     pp_end_layer: int,
     hidden_layers: int,
     tp_size: int,
+    dp_size: int,
     tcp_port: int,
     udp_port: int,
     dht_prefix: str,
@@ -999,6 +1010,7 @@ def launch_p2p_server_process(
     kvcache_mem_ratio: float = 0.25,
     shared_state: Optional[dict] = None,
     log_level: str = "INFO",
+    account: Optional[str] = None,
 ) -> multiprocessing.Process:
     """Launch P2P server as a subprocess and return the process object
 
@@ -1017,6 +1029,7 @@ def launch_p2p_server_process(
             pp_end_layer,
             hidden_layers,
             tp_size,
+            dp_size,
             tcp_port,
             udp_port,
             dht_prefix,
@@ -1032,6 +1045,7 @@ def launch_p2p_server_process(
             kvcache_mem_ratio,
             shared_state,
             log_level,
+            account,
         ),
     )
     process.start()

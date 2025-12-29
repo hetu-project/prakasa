@@ -1,19 +1,19 @@
 # Contributing Guide
 
-Welcome to **Parallax**, we're glad you're interested in contributing! We welcome and accept all kinds of contributions, no matter how small or large. Here are some common ways you can contribute to Parallax:
+Welcome to **Prakasa**, we're glad you're interested in contributing! We welcome and accept all kinds of contributions, no matter how small or large. Here are some common ways you can contribute to Prakasa:
   - Find and report bugs.
   - Request or suggest new features.
   - Enhance documentation and guides.
 
 We encourage everyone—first-time contributors and experienced developers alike—to follow these best practices for a smooth collaboration process.
 
-If you have any questions, feel free to ask in our [Discord channel](https://discord.gg/parallax).
+If you have any questions, feel free to ask in our [Discord channel](https://discord.gg/prakasa).
 
 ## How Can I Contribute?
 
 Before you start contributing, we recommend browsing existing issues to find something to work on. Once you’ve chosen an issue, developed your code, or updated any documents, submit a pull request; maintainers will review and eventually merge your changes. If you want to introduce a new feature or have discovered a bug, it’s a good idea to create an issue first and discuss it with the maintainers before proceeding.
 
-Here is a typical step-by-step process for contributing to Parallax:
+Here is a typical step-by-step process for contributing to Prakasa:
 - **Fork the repository** to your own GitHub account.
 - **Create a new branch** for your changes.
 - **Check and format your code** using tools such as `pre-commit` to ensure style consistency.
@@ -26,10 +26,10 @@ By following this process, you help ensure a smooth review and integration of yo
 
 ### Fork and clone the repository
 
-**Note:** As a new contributor, you do **not** have write access to the official Parallax repository. Please fork the [Parallax repository](https://github.com/GradientHQ/parallax) to your own GitHub account. After forking, clone your fork locally for development:
+**Note:** As a new contributor, you do **not** have write access to the official Prakasa repository. Please fork the [Prakasa repository](https://github.com/hetu-project/prakasa.git) to your own GitHub account. After forking, clone your fork locally for development:
 
 ```bash
-git clone https://github.com/<your_github_username>/parallax.git
+git clone https://github.com/<your_github_username>/prakasa.git
 ```
 
 ### Create a branch
@@ -103,6 +103,6 @@ To make it easier for others to understand the nature of your PR, always categor
 Prefix your pull request title accordingly for easy classification and review.
 
 ## Thank You
-Thank you for contributing to Parallax!
+Thank you for contributing to Prakasa!
 
 Your efforts help make this project better for everyone.

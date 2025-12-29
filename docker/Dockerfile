@@ -2,7 +2,7 @@ FROM lmsysorg/sglang:v0.5.5
 
 ENV SGLANG_ENABLE_JIT_DEEPGEMM=0
 
-WORKDIR /parallax
+WORKDIR /prakasa
 
 COPY README.md ./README.md
 COPY src ./src
