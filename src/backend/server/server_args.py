@@ -45,6 +45,21 @@ def parse_args() -> argparse.Namespace:
         "--enable-weight-refit", type=bool, default=False, help="Enable online weight refit"
     )
 
+    # Nostr configuration (forwarded from prakasa CLI)
+    parser.add_argument(
+        "--nostr-privkey",
+        type=str,
+        default=None,
+        help="Hex-encoded Nostr private key for the scheduler node",
+    )
+    parser.add_argument(
+        "--nostr-relay",
+        dest="nostr_relays",
+        action="append",
+        default=None,
+        help="Nostr relay URL (can be specified multiple times)",
+    )
+
     args = parser.parse_args()
 
     return args

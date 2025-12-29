@@ -9,6 +9,8 @@ from starlette.concurrency import iterate_in_threadpool
 from backend.server.constants import NODE_STATUS_AVAILABLE
 from parallax_utils.logging_config import get_logger
 from parallax_utils.request_metrics import get_request_metrics
+from prakasa_nostr import get_publisher
+from prakasa_nostr.events import TaskPublishEvent
 
 logger = get_logger(__name__)
 
@@ -92,6 +94,38 @@ class RequestHandler:
                 content={"error": "All pipelines are busy or not ready. Please retry later."},
                 status_code=429,
             )
+
+        # Optionally publish a CIP-09 dinf_task_publish event for this HTTP request.
+        # This is best-effort and must not affect the main request handling flow.
+        try:
+            pub = get_publisher()
+            if pub is not None and self.scheduler_manage is not None:
+                # Derive a short human description from the last chat message if present.
+                description = "chat_completion"
+                messages = request_data.get("messages")
+                if isinstance(messages, list) and messages:
+                    last_msg = messages[-1]
+                    if isinstance(last_msg, dict) and "content" in last_msg:
+                        # Truncate to avoid excessively large content in the event
+                        description = str(last_msg.get("content", ""))[:256] or description
+
+                model_name = self.scheduler_manage.get_model_name() or "unknown"
+                num_layers = getattr(
+                    getattr(self.scheduler_manage, "scheduler", None), "num_layers", 0
+                ) or 0
+
+                task_event = TaskPublishEvent.from_plaintext(
+                    sid="prakasa-main",
+                    description=description,
+                    model_name=model_name,
+                    num_layers=int(num_layers),
+                    category="inference",
+                    difficulty="medium",
+                )
+                pub.publish_event(task_event)
+        except Exception:
+            # Nostr publishing errors are logged at debug level only.
+            logger.debug("Failed to publish dinf_task_publish event", exc_info=True)
 
         # Add request_id and routing_table to request_data
         request_data["rid"] = str(request_id)

@@ -17,6 +17,7 @@ from backend.server.static_config import (
     get_node_join_command,
     init_model_info_dict_cache,
 )
+from prakasa_nostr import init_global_publisher
 from parallax_utils.ascii_anime import display_parallax_run
 from parallax_utils.file_util import get_project_root
 from parallax_utils.logging_config import get_logger, set_log_level
@@ -253,6 +254,19 @@ if __name__ == "__main__":
     args = parse_args()
     set_log_level(args.log_level)
     logger.info(f"args: {args}")
+
+    # Initialize global Nostr publisher for scheduler node if configured.
+    if getattr(args, "nostr_privkey", None):
+        relays = getattr(args, "nostr_relays", None) or []
+        try:
+            init_global_publisher(
+                args.nostr_privkey,
+                relays=relays,
+                sid="prakasa-main",
+                role="scheduler",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to initialize Nostr publisher (scheduler): {e}")
 
     if args.model_name is None:
         init_model_info_dict_cache(args.use_hfcache)

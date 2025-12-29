@@ -5,6 +5,13 @@ from lattica import ConnectionHandler, Lattica, rpc_method, rpc_stream, rpc_stre
 from parallax_utils.logging_config import get_logger
 from scheduling.node import Node, NodeHardwareInfo
 from scheduling.scheduler import Scheduler
+from prakasa_nostr import get_publisher
+from prakasa_nostr.events import (
+    Assignment,
+    ModelRef,
+    SchedulerAssignmentContent,
+    SchedulerAssignmentEvent,
+)
 
 logger = get_logger(__name__)
 
@@ -169,7 +176,7 @@ class RPCConnectionHandler(ConnectionHandler):
             if current_node_id == node_id:
                 node = self.scheduler.node_id_to_node.get(node_id)
                 if node:
-                    return {
+                    allocation = {
                         "node_id": node_id,
                         "model_name": (
                             node.model_info.model_name
@@ -181,6 +188,51 @@ class RPCConnectionHandler(ConnectionHandler):
                         "tp_size": node.hardware.num_gpus,
                         "enable_weight_refit": self.scheduler.enable_weight_refit,
                     }
+                    # Best-effort publishing of a CIP-09 dinf_task_assign event for this node.
+                    try:
+                        pub = get_publisher()
+                        if pub is not None:
+                            model_info = self.scheduler.model_info
+                            model_ref = ModelRef(
+                                model_name=model_info.model_name,
+                                num_layers=model_info.num_layers,
+                                model_version=None,
+                            )
+                            assignment = Assignment(
+                                worker_pubkey=node.node_id,
+                                node_id=node.node_id,
+                                account=node.account,
+                                start_layer=start_layer,
+                                end_layer=end_layer,
+                                tp_rank=0,
+                                tp_size=node.hardware.num_gpus,
+                                dp_rank=0,
+                                dp_size=1,
+                                max_concurrent_requests=node.max_requests,
+                                max_sequence_length=node.max_sequence_length,
+                                expected_work_units=None,
+                            )
+                            content = SchedulerAssignmentContent(
+                                assignments=[assignment],
+                                model=model_ref,
+                                routing=None,
+                                deadline=None,
+                            )
+                            allocation_id = f"{model_ref.model_name}:{start_layer}-{end_layer}"
+
+                            event = SchedulerAssignmentEvent.from_content(
+                                sid="prakasa-main",
+                                task_event_id=None,
+                                allocation_id=allocation_id,
+                                content=content,
+                            )
+                            pub.publish_event(event)
+                    except Exception:
+                        # Nostr errors must never affect scheduling; log at debug only.
+                        logger.debug(
+                            "Failed to publish dinf_task_assign event for node %s", current_node_id
+                        )
+                    return allocation
         return {}
 
     def build_node(self, node_json: dict):

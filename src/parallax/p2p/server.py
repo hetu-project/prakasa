@@ -23,6 +23,14 @@ import zmq
 from lattica import ConnectionHandler, Lattica, rpc_method, rpc_stream, rpc_stream_iter
 
 from backend.server.rpc_connection_handler import RPCConnectionHandler
+from prakasa_nostr import get_publisher, init_global_publisher
+from prakasa_nostr.events import (
+    LayerRange,
+    ModelRef,
+    WorkloadProofContent,
+    WorkloadProofEvent,
+    WorkloadProofMetrics,
+)
 from parallax.p2p.proto import forward_pb2
 from parallax.p2p.utils import AsyncWorker
 from parallax.server.server_info import detect_node_hardware
@@ -34,6 +42,9 @@ logger = get_logger(__name__)
 
 # Global HTTP client for reuse
 _http_client = None
+
+# In-memory map of request start times for latency measurement in Nostr events
+_nostr_request_start_ts: dict[str, float] = {}
 
 
 async def get_http_client():
@@ -68,7 +79,7 @@ class ServerInfo:
     error_message: Optional[str] = None
 
 
-def send_notify(notify_url, block_start_index, block_end_index, request, status):
+def send_notify(node_id, account, notify_url, block_start_index, block_end_index, request, status):
     payload = [
         {
             "session_id": req.rid,
@@ -81,6 +92,69 @@ def send_notify(notify_url, block_start_index, block_end_index, request, status)
     ]
 
     logger.info(f"Send {status} notification, batch size: {len(payload)}")
+
+    # Track per-request latency timestamps for workload proof events.
+    try:
+        import time as _time
+
+        for req in request.reqs:
+            rid = req.rid
+            if status == "started":
+                _nostr_request_start_ts[rid] = _time.time()
+            elif status == "completed":
+                start_ts = _nostr_request_start_ts.pop(rid, None)
+                if start_ts is not None:
+                    latency_ms = (_time.time() - start_ts) * 1000.0
+                else:
+                    latency_ms = None
+
+                pub = get_publisher()
+                if pub is not None:
+                    try:
+                        tokens_in = len(req.input_ids)
+                        tokens_out = int(getattr(req, "output_length", 0))
+                        work_units = float(
+                            max(1, block_end_index - block_start_index)
+                            * max(1, tokens_in + tokens_out)
+                        )
+                        metrics = WorkloadProofMetrics(
+                            tokens_in=tokens_in,
+                            tokens_out=tokens_out,
+                            batch_size=len(request.reqs),
+                            wall_time_ms=latency_ms,
+                            work_units=work_units,
+                        )
+                        content = WorkloadProofContent(
+                            worker_pubkey=node_id,
+                            node_id=node_id,
+                            account=account,
+                            model=ModelRef(
+                                model_name="unknown",
+                                num_layers=block_end_index,
+                                model_version=None,
+                            ),
+                            layer_range=LayerRange(
+                                start_layer=block_start_index,
+                                end_layer=block_end_index,
+                            ),
+                            metrics=metrics,
+                            proof=None,
+                        )
+                        event = WorkloadProofEvent.from_content(
+                            sid="prakasa-main",
+                            task_event_id=None,
+                            result_event_id=None,
+                            allocation_id=f"{block_start_index}-{block_end_index}",
+                            account=account,
+                            content=content,
+                            score=None,
+                        )
+                        pub.publish_event(event)
+                    except Exception as e:
+                        logger.debug(f"Failed to publish Nostr workload proof: {e}")
+    except Exception:
+        # Never let metrics publishing disrupt the main path.
+        pass
 
     if notify_url is not None:
 
@@ -111,6 +185,8 @@ class TransformerConnectionHandler(ConnectionHandler):
         block_end_index: int,
         http_port: Optional[int] = None,
         notify_url: Optional[str] = None,
+        node_id: Optional[str] = None,
+        account: Optional[str] = None,
     ):
         # Initialize the base class
         super().__init__(lattica)
@@ -120,6 +196,8 @@ class TransformerConnectionHandler(ConnectionHandler):
         self.block_end_index = block_end_index
         self.http_port = http_port
         self.notify_url = notify_url
+        self.node_id = node_id
+        self.account = account
         self._recv_from_peer = None
         self._recv_from_peer_lock = threading.Lock()
 
@@ -139,7 +217,13 @@ class TransformerConnectionHandler(ConnectionHandler):
         """Handle forward pass request with explicit proxy tensors support"""
         try:
             send_notify(
-                self.notify_url, self.block_start_index, self.block_end_index, request, "started"
+                self.node_id,
+                self.account,
+                self.notify_url,
+                self.block_start_index,
+                self.block_end_index,
+                request,
+                "started",
             )
             with self._recv_from_peer_lock:
                 self.recv_from_peer.send_multipart([b"forward", request.SerializeToString()])
@@ -497,6 +581,8 @@ class GradientServer:
             block_end_index=self.block_end_index,
             http_port=self.http_port,
             notify_url=self.notify_url,
+            node_id=self.lattica.peer_id(),
+            account=self.account,
         )  # thread
 
         self.start_node_announcer()  # thread
@@ -632,6 +718,8 @@ class GradientServer:
                         response = stub.rpc_pp_forward(new_forward_request)
                         response.result()
                         send_notify(
+                            self.lattica.peer_id(),
+                            self.account,
                             self.notify_url,
                             self.block_start_index,
                             self.block_end_index,
@@ -929,6 +1017,8 @@ def _run_p2p_server_process(
     kvcache_mem_ratio: float = 0.25,
     shared_state: Optional[dict] = None,
     log_level: str = "INFO",
+    nostr_privkey: Optional[str] = None,
+    nostr_relays: Optional[List[str]] = None,
     account: Optional[str] = None,
 ):
     """Run P2P server in subprocess"""
@@ -936,6 +1026,18 @@ def _run_p2p_server_process(
     set_log_level(log_level)
     server = None
     try:
+        # Initialize Nostr publisher inside the P2P subprocess if configured
+        if nostr_privkey:
+            try:
+                init_global_publisher(
+                    nostr_privkey,
+                    relays=nostr_relays or [],
+                    sid="prakasa-main",
+                    role="worker",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to initialize Nostr publisher in P2P subprocess: {e}")
+
         server = GradientServer(
             recv_from_peer_addr=recv_from_peer_addr,
             send_to_peer_addr=send_to_peer_addr,
@@ -1010,6 +1112,8 @@ def launch_p2p_server_process(
     kvcache_mem_ratio: float = 0.25,
     shared_state: Optional[dict] = None,
     log_level: str = "INFO",
+    nostr_privkey: Optional[str] = None,
+    nostr_relays: Optional[List[str]] = None,
     account: Optional[str] = None,
 ) -> multiprocessing.Process:
     """Launch P2P server as a subprocess and return the process object
@@ -1045,6 +1149,8 @@ def launch_p2p_server_process(
             kvcache_mem_ratio,
             shared_state,
             log_level,
+            nostr_privkey,
+            nostr_relays,
             account,
         ),
     )

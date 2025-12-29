@@ -46,6 +46,21 @@ def parse_args() -> argparse.Namespace:
         "--notify-url", type=str, default=None, help="URL to notify when a request is finished"
     )
 
+    # Nostr configuration (forwarded from prakasa CLI)
+    parser.add_argument(
+        "--nostr-privkey",
+        type=str,
+        default=None,
+        help="Hex-encoded Nostr private key for this worker node",
+    )
+    parser.add_argument(
+        "--nostr-relay",
+        dest="nostr_relays",
+        action="append",
+        default=None,
+        help="Nostr relay URL (can be specified multiple times)",
+    )
+
     # Model configuration
     parser.add_argument(
         "--model-path",

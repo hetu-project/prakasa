@@ -16,6 +16,7 @@ import subprocess
 import sys
 
 import requests
+from pynostr.key import PrivateKey
 try:
     import yaml
 except Exception:
@@ -196,7 +197,10 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                     return True
         return False
 
-    # Load YAML config (if provided either before or after subcommand)
+    project_root = get_project_root()
+
+    # Load YAML config (if provided either before or after subcommand).
+    # If not explicitly provided, fall back to the default config.template.yaml.
     config_path = None
     if getattr(args, "config", None):
         config_path = args.config
@@ -204,6 +208,10 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
         cfg = _find_flag_value(passthrough_args, ["--config"]) or _find_flag_value(sys.argv[1:], ["--config"]) if sys.argv else None
         if cfg:
             config_path = cfg
+    if config_path is None:
+        default_cfg = project_root / "config.template.yaml"
+        if default_cfg.exists():
+            config_path = str(default_cfg)
 
     config_data = None
     if config_path:
@@ -223,6 +231,11 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
         if not isinstance(cmd_conf, dict):
             cmd_conf = {}
 
+        # Helper to pull nested Nostr config
+        nostr_conf = cmd_conf.get("nostr") if isinstance(cmd_conf, dict) else None
+        if nostr_conf is None:
+            nostr_conf = {}
+
         # run command options
         if args.command == "run":
             if not _cli_flag_provided(["-m", "--model-name"]) and "model_name" in cmd_conf:
@@ -234,6 +247,12 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                     args.init_nodes_num = cmd_conf.get("init_nodes_num")
             if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
                 args.use_relay = bool(cmd_conf.get("use_relay"))
+
+            # Nostr options for scheduler
+            if not _cli_flag_provided(["--nostr-privkey"]) and "privkey" in nostr_conf:
+                setattr(args, "nostr_privkey", nostr_conf.get("privkey"))
+            if not _cli_flag_provided(["--nostr-relay"]) and "relays" in nostr_conf:
+                setattr(args, "nostr_relays", nostr_conf.get("relays") or [])
 
             # passthrough: e.g., --port
             if "port" in cmd_conf and not _flag_present(passthrough_args, ["--port"]):
@@ -257,6 +276,12 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
             if not _cli_flag_provided(["--account"]) and "account" in cmd_conf:
                 args.account = cmd_conf.get("account")
 
+            # Nostr options for worker
+            if not _cli_flag_provided(["--nostr-privkey"]) and "privkey" in nostr_conf:
+                setattr(args, "nostr_privkey", nostr_conf.get("privkey"))
+            if not _cli_flag_provided(["--nostr-relay"]) and "relays" in nostr_conf:
+                setattr(args, "nostr_relays", nostr_conf.get("relays") or [])
+
             # join passthrough defaults (max-num-tokens-per-batch, etc.)
             join_passthrough_flags = [
                 ("--max-num-tokens-per-batch", "max_num_tokens_per_batch"),
@@ -275,6 +300,36 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 args.scheduler_addr = cmd_conf.get("scheduler_addr")
             if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
                 args.use_relay = bool(cmd_conf.get("use_relay"))
+
+            # Nostr options for chat client
+            if not _cli_flag_provided(["--nostr-privkey"]) and "privkey" in nostr_conf:
+                setattr(args, "nostr_privkey", nostr_conf.get("privkey"))
+            if not _cli_flag_provided(["--nostr-relay"]) and "relays" in nostr_conf:
+                setattr(args, "nostr_relays", nostr_conf.get("relays") or [])
+
+    # If no Nostr private key was provided anywhere, lazily generate one and
+    # persist it back into the default config file so future runs are stable.
+    default_cfg_path = project_root / "config.template.yaml"
+    using_default_cfg = config_path is not None and str(default_cfg_path) == str(config_path)
+
+    if using_default_cfg and getattr(args, "nostr_privkey", None) is None:
+        if config_data is None:
+            config_data = {}
+        cmd_section = config_data.setdefault(args.command, {})
+        nostr_section = cmd_section.setdefault("nostr", {})
+        if not nostr_section.get("privkey"):
+            pk = PrivateKey()
+            nostr_section["privkey"] = pk.hex()
+            setattr(args, "nostr_privkey", nostr_section["privkey"])
+            # Ensure relays array exists
+            nostr_section.setdefault("relays", ["wss://nostr-pub.wellorder.net"])
+
+            try:
+                if yaml is not None:
+                    with open(default_cfg_path, "w", encoding="utf-8") as f:
+                        yaml.safe_dump(config_data, f, sort_keys=False, allow_unicode=True)
+            except Exception as e:
+                logger.warning(f"Failed to persist generated Nostr key to {default_cfg_path}: {e}")
 
     return args, passthrough_args
 
@@ -309,6 +364,14 @@ def run_command(args, passthrough_args: list[str] | None = None):
         logger.info(
             "Using public relay server to help nodes and the scheduler establish a connection (remote mode). Your IP address will be reported to the relay server to help establish the connection."
         )
+
+    # Nostr options for scheduler backend
+    nostr_privkey = getattr(args, "nostr_privkey", None)
+    nostr_relays = getattr(args, "nostr_relays", None) or []
+    if nostr_privkey:
+        cmd.extend(["--nostr-privkey", nostr_privkey])
+    for r in nostr_relays:
+        cmd.extend(["--nostr-relay", r])
 
     # Append any passthrough args (unrecognized by this CLI) directly to the command
     if passthrough_args:
@@ -354,6 +417,14 @@ def join_command(args, passthrough_args: list[str] | None = None):
 
     if args.account is not None:
         cmd.extend(["--account", args.account])
+
+    # Nostr options for worker node
+    nostr_privkey = getattr(args, "nostr_privkey", None)
+    nostr_relays = getattr(args, "nostr_relays", None) or []
+    if nostr_privkey:
+        cmd.extend(["--nostr-privkey", nostr_privkey])
+    for r in nostr_relays:
+        cmd.extend(["--nostr-relay", r])
 
     # Relay logic based on effective scheduler address
     if args.use_relay or (
@@ -507,6 +578,19 @@ Examples:
         default=None,
         help="Path to YAML config file (values used when CLI doesn't provide them)",
     )
+    run_parser.add_argument(
+        "--nostr-privkey",
+        type=str,
+        default=None,
+        help="Hex-encoded Nostr private key for the scheduler node",
+    )
+    run_parser.add_argument(
+        "--nostr-relay",
+        dest="nostr_relays",
+        action="append",
+        default=None,
+        help="Nostr relay URL (can be specified multiple times)",
+    )
 
     # Add 'join' command parser
     join_parser = subparsers.add_parser(
@@ -537,6 +621,19 @@ Examples:
         default=None,
         help="Path to YAML config file (values used when CLI doesn't provide them)",
     )
+    join_parser.add_argument(
+        "--nostr-privkey",
+        type=str,
+        default=None,
+        help="Hex-encoded Nostr private key for the worker node",
+    )
+    join_parser.add_argument(
+        "--nostr-relay",
+        dest="nostr_relays",
+        action="append",
+        default=None,
+        help="Nostr relay URL (can be specified multiple times)",
+    )
 
     # Add 'chat' command parser
     chat_parser = subparsers.add_parser(
@@ -557,6 +654,19 @@ Examples:
         type=str,
         default=None,
         help="Path to YAML config file (values used when CLI doesn't provide them)",
+    )
+    chat_parser.add_argument(
+        "--nostr-privkey",
+        type=str,
+        default=None,
+        help="Hex-encoded Nostr private key for the chat client",
+    )
+    chat_parser.add_argument(
+        "--nostr-relay",
+        dest="nostr_relays",
+        action="append",
+        default=None,
+        help="Nostr relay URL (can be specified multiple times)",
     )
 
     # Accept unknown args and pass them through to the underlying python command

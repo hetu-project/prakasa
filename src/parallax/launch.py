@@ -22,6 +22,7 @@ import os
 import tempfile
 import time
 
+from prakasa_nostr import init_global_publisher
 from parallax.p2p.server import ServerState, launch_p2p_server_process, stop_p2p_server
 from parallax.server.executor.factory import run_executor_process, stop_executor_process
 from parallax.server.http_server import launch_http_server, stop_http_server
@@ -91,6 +92,19 @@ if __name__ == "__main__":
         args = parse_args()
         set_log_level(args.log_level)
         logger.debug(f"args: {args}")
+
+        # Initialize global Nostr publisher for this worker node (current process)
+        if getattr(args, "nostr_privkey", None):
+            relays = getattr(args, "nostr_relays", None) or []
+            try:
+                init_global_publisher(
+                    args.nostr_privkey,
+                    relays=relays,
+                    sid="prakasa-main",
+                    role="worker",
+                )
+            except Exception as e:
+                logger.warning(f"Failed to initialize Nostr publisher (worker main): {e}")
         args.recv_from_peer_addr = f"ipc://{tempfile.NamedTemporaryFile().name}"
         args.send_to_peer_addr = f"ipc://{tempfile.NamedTemporaryFile().name}"
         args.executor_input_ipc = f"ipc://{tempfile.NamedTemporaryFile().name}"
@@ -138,6 +152,8 @@ if __name__ == "__main__":
                 kvcache_mem_ratio=args.kvcache_mem_ratio,
                 shared_state=shared_state.dict,  # Pass dict to subprocess
                 log_level=args.log_level,
+                nostr_privkey=getattr(args, "nostr_privkey", None),
+                nostr_relays=getattr(args, "nostr_relays", None) or [],
                 account=getattr(args, "account", None),
             )
 
@@ -188,6 +204,8 @@ if __name__ == "__main__":
                 kvcache_mem_ratio=args.kvcache_mem_ratio,
                 shared_state=shared_state.dict,  # Pass dict to subprocess
                 log_level=args.log_level,
+                nostr_privkey=getattr(args, "nostr_privkey", None),
+                nostr_relays=getattr(args, "nostr_relays", None) or [],
                 account=getattr(args, "account", None),
             )
 
