@@ -240,6 +240,8 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
         if args.command == "run":
             if not _cli_flag_provided(["-m", "--model-name"]) and "model_name" in cmd_conf:
                 args.model_name = cmd_conf.get("model_name")
+            if not _cli_flag_provided(["--log-level"]) and "log_level" in cmd_conf:
+                args.log_level = cmd_conf.get("log_level")
             if not _cli_flag_provided(["-n", "--init-nodes-num"]) and "init_nodes_num" in cmd_conf:
                 try:
                     args.init_nodes_num = int(cmd_conf.get("init_nodes_num"))
@@ -271,6 +273,8 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
         if args.command == "join":
             if not _cli_flag_provided(["-s", "--scheduler-addr"]) and "scheduler_addr" in cmd_conf:
                 args.scheduler_addr = cmd_conf.get("scheduler_addr")
+            if not _cli_flag_provided(["--log-level"]) and "log_level" in cmd_conf:
+                args.log_level = cmd_conf.get("log_level")
             if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
                 args.use_relay = bool(cmd_conf.get("use_relay"))
             if not _cli_flag_provided(["--account"]) and "account" in cmd_conf:
@@ -300,6 +304,8 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 args.scheduler_addr = cmd_conf.get("scheduler_addr")
             if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
                 args.use_relay = bool(cmd_conf.get("use_relay"))
+            if not _cli_flag_provided(["--log-level"]) and "log_level" in cmd_conf:
+                args.log_level = cmd_conf.get("log_level")
 
             # Nostr options for chat client
             if not _cli_flag_provided(["--nostr-privkey"]) and "privkey" in nostr_conf:
@@ -308,28 +314,28 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 setattr(args, "nostr_relays", nostr_conf.get("relays") or [])
 
     # If no Nostr private key was provided anywhere, lazily generate one and
-    # persist it back into the default config file so future runs are stable.
+    # persist it back into the current config file so future runs are stable.
     default_cfg_path = project_root / "config.template.yaml"
     using_default_cfg = config_path is not None and str(default_cfg_path) == str(config_path)
 
-    if using_default_cfg and getattr(args, "nostr_privkey", None) is None:
+    if not using_default_cfg and getattr(args, "nostr_privkey", None) is None:
         if config_data is None:
             config_data = {}
         cmd_section = config_data.setdefault(args.command, {})
         nostr_section = cmd_section.setdefault("nostr", {})
         if not nostr_section.get("privkey"):
             pk = PrivateKey()
-            nostr_section["privkey"] = pk.hex()
+            nostr_section["privkey"] = pk.bech32()
             setattr(args, "nostr_privkey", nostr_section["privkey"])
             # Ensure relays array exists
-            nostr_section.setdefault("relays", ["wss://nostr-pub.wellorder.net"])
+            nostr_section.setdefault("relays", ["wss://nostr.parallel.hetu.org:8443"])
 
             try:
                 if yaml is not None:
-                    with open(default_cfg_path, "w", encoding="utf-8") as f:
+                    with open(config_path, "w", encoding="utf-8") as f:
                         yaml.safe_dump(config_data, f, sort_keys=False, allow_unicode=True)
             except Exception as e:
-                logger.warning(f"Failed to persist generated Nostr key to {default_cfg_path}: {e}")
+                logger.warning(f"Failed to persist generated Nostr key to {config_path}: {e}")
 
     return args, passthrough_args
 
@@ -357,6 +363,8 @@ def run_command(args, passthrough_args: list[str] | None = None):
     # Add optional arguments if provided
     if args.model_name:
         cmd.extend(["--model-name", args.model_name])
+    if args.log_level:
+        cmd.extend(["--log-level", args.log_level])
     if args.init_nodes_num:
         cmd.extend(["--init-nodes-num", str(args.init_nodes_num)])
     if args.use_relay:
@@ -418,6 +426,9 @@ def join_command(args, passthrough_args: list[str] | None = None):
     if args.account is not None:
         cmd.extend(["--account", args.account])
 
+    if args.log_level:
+        cmd.extend(["--log-level", args.log_level])
+
     # Nostr options for worker node
     nostr_privkey = getattr(args, "nostr_privkey", None)
     nostr_relays = getattr(args, "nostr_relays", None) or []
@@ -459,6 +470,9 @@ def chat_command(args, passthrough_args: list[str] | None = None):
     cmd = [sys.executable, str(launch_script)]
 
     cmd.extend(["--scheduler-addr", args.scheduler_addr])
+
+    if args.log_level:
+        cmd.extend(["--log-level", args.log_level])
 
     # Relay logic based on effective scheduler address
     if args.use_relay or (

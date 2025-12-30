@@ -29,6 +29,13 @@ When running `prakasa run` for the first time or after an update, the code versi
 prakasa run -u
 ```
 
+Or, use the configure file to setup scheduler directly:
+```sh
+cp config.template.yaml my_config.yaml
+# edit my_config.yaml to set your desired options
+prakasa run -c {my-config-file-path}
+```
+
 #### Step 2: Set cluster and model config
 
 Open http://localhost:3001 and you should see the setup interface.
@@ -62,6 +69,11 @@ When running `prakasa join` for the first time or after an update, the code vers
 prakasa join -u
 ```
 
+Or, use the configure file to setup worker directly:
+```sh
+prakasa join -c {my-config-file-path}
+```
+
 #### Step 4: Chat
 
 Done! You have your own AI cluster now.
@@ -86,6 +98,11 @@ After launching, visit [http://localhost:3002](http://localhost:3002) in your br
 To allow the API to be accessible from other machines, add the argument `--host 0.0.0.0` when launching chat interface.
 ```sh
 prakasa chat --host 0.0.0.0
+```
+
+Or, use the configure file to setup chat directly:
+```sh
+prakasa chat -c {my-config-file-path}
 ```
 
 ### Without frontend

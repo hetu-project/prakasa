@@ -12,13 +12,15 @@ run:
   port: 3001
   # Host for backend to bind to (e.g., 0.0.0.0)
   host: "127.0.0.1"
+  # Log Level setting
+  log_level: INFO
   # Nostr configuration for scheduler node
   nostr:
     # Hex-encoded Nostr private key; if null, a new one will be generated on first run
     privkey: null
     # List of Nostr relay URLs used for publishing DINF events
     relays:
-      - "wss://nostr-pub.wellorder.net"
+      - "wss://nostr.parallel.hetu.org:8443"
 
 join:
   # Scheduler address to connect to ("auto" or multiaddr)
@@ -32,21 +34,25 @@ join:
   max_sequence_length: 2048
   max_batch_size: 8
   kv_block_size: 32
+  # Log Level setting
+  log_level: INFO
   # Nostr configuration for worker nodes
   nostr:
     # Hex-encoded Nostr private key; if null, a new one will be generated on first join
     privkey: null
     # List of Nostr relay URLs used for publishing DINF events
     relays:
-      - "wss://nostr-pub.wellorder.net"
+      - "wss://nostr.parallel.hetu.org:8443"
 
 chat:
   # Scheduler address for chat client
   scheduler_addr: "auto"
   # Whether to use relay servers for chat
   use_relay: false
+  # Log Level setting
+  log_level: INFO
   # Nostr configuration for chat client (optional, used if chat needs to emit DINF events)
   nostr:
     privkey: null
     relays:
-      - "wss://nostr-pub.wellorder.net"
+      - "wss://nostr.parallel.hetu.org:8443"

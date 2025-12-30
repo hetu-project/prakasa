@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+import time
 from typing import List, Optional
 
 from pynostr.event import Event
@@ -36,13 +37,13 @@ class NostrPublisher:
     def __init__(
         self,
         *,
-        private_key_hex: str,
+        private_key_nsec: str,
         relays: List[str],
         timeout: int = 6,
         sid: str = "prakasa-main",
         role: str = "node",
     ) -> None:
-        self._private_key = PrivateKey(bytes.fromhex(private_key_hex))
+        self._private_key = PrivateKey.from_nsec(private_key_nsec)
         self._relay_manager = RelayManager(timeout=timeout)
         for r in relays:
             try:
@@ -90,7 +91,44 @@ class NostrPublisher:
 
             try:
                 event.sign(self._private_key.hex())
+                # enqueue for publishing
                 self._relay_manager.publish_event(event)
+
+                # Ensure the relay manager sends messages and process replies.
+                try:
+                    # run_sync will flush pending network ops
+                    self._relay_manager.run_sync()
+                except Exception as exc:
+                    logger.debug("RelayManager.run_sync failed: %s", exc)
+
+                # brief pause to allow messages to be processed by relays
+                try:
+                    time.sleep(0.5)
+                except Exception:
+                    pass
+
+                mp = getattr(self._relay_manager, "message_pool", None)
+                if mp is not None:
+                    try:
+                        while getattr(mp, "has_ok_notices", lambda: False)():
+                            ok_msg = mp.get_ok_notice()
+                            logger.debug("Nostr ok notice: %s", ok_msg)
+                    except Exception:
+                        pass
+                    try:
+                        while getattr(mp, "has_events", lambda: False)():
+                            event_msg = mp.get_event()
+                            ev = getattr(event_msg, "event", None)
+                            if ev is not None:
+                                try:
+                                    logger.debug("Nostr received event: %s", ev.to_dict())
+                                except Exception:
+                                    logger.debug("Nostr received event (non-dict): %s", ev)
+                            else:
+                                logger.debug("Nostr received message: %s", event_msg)
+                    except Exception:
+                        pass
+
                 logger.debug(
                     "Published Nostr event kind=%s id=%s role=%s",
                     getattr(event, "kind", None),
@@ -139,7 +177,7 @@ def init_global_publisher(
 
     try:
         _GLOBAL_PUBLISHER = NostrPublisher(
-            private_key_hex=private_key_hex,
+            private_key_nsec=private_key_hex,
             relays=relays,
             sid=sid,
             role=role,
