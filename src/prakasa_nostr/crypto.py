@@ -118,7 +118,23 @@ class PayloadBuilder:
         }
 
     @staticmethod
-    def build_chat_message(text: str, model: str = "", agent_name: str = "") -> dict:
+    def build_chat_message(
+        text: str, 
+        model: str = "", 
+        agent_name: str = "",
+        reply_to: Optional[str] = None,
+        agent_avatar: Optional[str] = None
+    ) -> dict:
+        """
+        Build chat message payload for Kind 42 encryption.
+        
+        Args:
+            text: Message text content
+            model: Model name used for generation
+            agent_name: Agent name
+            reply_to: Optional event ID of the message being replied to
+            agent_avatar: Optional agent avatar URL or identifier
+        """
         payload = {
             "text": text,
             "type": "text"
@@ -127,6 +143,10 @@ class PayloadBuilder:
             payload["model"] = model
         if agent_name:
             payload["agent_name"] = agent_name
+        if reply_to:
+            payload["reply_to"] = reply_to
+        if agent_avatar:
+            payload["agent_avatar"] = agent_avatar
         return payload
 
 # ==========================================
