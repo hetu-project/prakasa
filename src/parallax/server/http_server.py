@@ -111,6 +111,7 @@ class HTTPRequestInfo:
     # Reply and user tagging
     reply_to_event_id: Optional[str] = None  # Event ID of the message being replied to
     user_pubkey: Optional[str] = None  # User public key (for p tag)
+    agent_name: Optional[str] = None  # Agent name (from scheduler's model_name)
     agent_avatar: Optional[str] = None  # Agent avatar URL or identifier
 
 
@@ -166,6 +167,7 @@ class HTTPHandler:
         # Extract reply and user info
         reply_to_event_id = extra_body.get("reply_to_event_id") or request.get("reply_to_event_id")
         user_pubkey = extra_body.get("user_pubkey") or request.get("user_pubkey")
+        agent_name = extra_body.get("agent_name") or request.get("agent_name") or "prakasa-agent"
         agent_avatar = extra_body.get("agent_avatar") or request.get("agent_avatar")
         
         request_info = HTTPRequestInfo(
@@ -181,6 +183,7 @@ class HTTPHandler:
             group_key=group_key,
             reply_to_event_id=reply_to_event_id,
             user_pubkey=user_pubkey,
+            agent_name=agent_name,
             agent_avatar=agent_avatar,
         )
         if stream:
@@ -514,7 +517,7 @@ class HTTPHandler:
             payload = PayloadBuilder.build_chat_message(
                 text=request_info.accumulated_text,
                 model=request_info.model,
-                agent_name="prakasa-agent",  # TODO
+                agent_name=request_info.agent_name or "prakasa-agent",
                 reply_to=request_info.reply_to_event_id,
                 agent_avatar=request_info.agent_avatar
             )
