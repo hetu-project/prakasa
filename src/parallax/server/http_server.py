@@ -42,6 +42,16 @@ from parallax_utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+try:
+    from prakasa_nostr import get_publisher
+    from prakasa_nostr.crypto import GroupV1Crypto, PayloadBuilder
+    from prakasa_nostr.events import ChatEvent
+    NOSTR_AVAILABLE = True
+except ImportError:
+    NOSTR_AVAILABLE = False
+    logger.warning("prakasa_nostr not available, group chat publishing disabled")
+
+
 def get_exception_traceback():
     """Traceback function to handle asyncio function errors"""
     etype, value, tb = sys.exc_info()
@@ -93,6 +103,16 @@ class HTTPRequestInfo:
     token_ids_list: List = field(default_factory=list)  # Store token IDs for each token
     # Weight version for RL
     weight_version: Optional[int] = None
+    # Nostr group chat publishing
+    group_id: Optional[str] = None  # Group ID for Nostr publishing
+    group_key: Optional[str] = None  # Group shared key for encryption
+    accumulated_text: str = ""  # Accumulated text for batch publishing
+    publish_task: Optional[asyncio.Task] = field(default=None, repr=False)  # Per-request publish task
+    # Reply and user tagging
+    reply_to_event_id: Optional[str] = None  # Event ID of the message being replied to
+    user_pubkey: Optional[str] = None  # User public key (for p tag)
+    agent_name: Optional[str] = None  # Agent name (from scheduler's model_name)
+    agent_avatar: Optional[str] = None  # Agent avatar URL or identifier
 
 
 class HTTPHandler:
@@ -137,8 +157,19 @@ class HTTPHandler:
         return_probs = request.get("return_probs", False)  # Check if probs requested
         chat_object = "chat.completion.chunk" if stream else "chat.completion"
         detokenizer = self.detokenizer_class(self.tokenizer, self.tokenmap)
-        create_time = time.time()
+        create_time = time.time(
         update_time = create_time
+        
+       
+        extra_body = request.get("extra_body", {})
+        group_id = extra_body.get("group_id") or request.get("group_id")
+        group_key = extra_body.get("group_key") or request.get("group_key")
+        # Extract reply and user info
+        reply_to_event_id = extra_body.get("reply_to_event_id") or request.get("reply_to_event_id")
+        user_pubkey = extra_body.get("user_pubkey") or request.get("user_pubkey")
+        agent_name = extra_body.get("agent_name") or request.get("agent_name") or "prakasa-agent"
+        agent_avatar = extra_body.get("agent_avatar") or request.get("agent_avatar")
+        
         request_info = HTTPRequestInfo(
             id=rid,
             stream=stream,
@@ -148,13 +179,32 @@ class HTTPHandler:
             update_time=update_time,
             detokenizer=detokenizer,
             return_probs=return_probs,
+            group_id=group_id,
+            group_key=group_key,
+            reply_to_event_id=reply_to_event_id,
+            user_pubkey=user_pubkey,
+            agent_name=agent_name,
+            agent_avatar=agent_avatar,
         )
         if stream:
             request_info.token_queue = asyncio.Queue()
+        
+        # Create per-request publish task if group_id and group_key are provided
+        if NOSTR_AVAILABLE and group_id and group_key and stream:
+            request_info.publish_task = asyncio.create_task(
+                self._publish_loop_for_request(rid)
+            )
+            logger.debug(f"Created publish task for request {rid} with group_id {group_id[:8]}...")
+        
         self.processing_requests[rid] = request_info
 
     def release_request(self, rid: str):
         """Releases the request resources"""
+        request_info = self.processing_requests.get(rid)
+        if request_info:
+            # Clean up publish task if it still exists
+            if request_info.publish_task and not request_info.publish_task.done():
+                request_info.publish_task.cancel()
         del self.processing_requests[rid]
 
     def send_request(self, request: Dict):
@@ -380,6 +430,10 @@ class HTTPHandler:
                 # For streaming, put the individual token into the queue.
                 if request_info.stream:
                     await request_info.token_queue.put(output)
+                
+                # Accumulate text for Nostr publishing
+                if request_info.group_id and request_info.group_key:
+                    request_info.accumulated_text += output
 
             # If it is the end of the stream, update status and send sentinel
             if is_finished:
@@ -398,6 +452,19 @@ class HTTPHandler:
                     request_info.finish_reason = "unknown"
 
                 request_info.is_finish = True
+                
+       
+                if request_info.publish_task and not request_info.publish_task.done():
+                    request_info.publish_task.cancel()
+                    try:
+                        await request_info.publish_task
+                    except asyncio.CancelledError:
+                        pass
+                
+                # Publish remaining accumulated text
+                if request_info.accumulated_text and request_info.group_id and request_info.group_key:
+                    await self._publish_chunk(rid, request_info, is_final=True)
+                
                 if request_info.stream:
                     await request_info.token_queue.put(None)  # Sentinel for stream end
 
@@ -405,6 +472,84 @@ class HTTPHandler:
         """Create asyncio event loop task function"""
         task_loop = asyncio.create_task(print_exception_wrapper(self._handle_loop))
         await task_loop
+
+    async def _publish_loop_for_request(self, rid: str):
+        """
+        Per-request publish loop that runs every 2 seconds to batch publish accumulated text.
+        This task is created when a request starts and cancelled when the request finishes.
+        """
+        request_info = self.processing_requests.get(rid)
+        if not request_info:
+            return
+        
+        try:
+            while not request_info.is_finish:
+                await asyncio.sleep(2.0) 
+                
+                if request_info.accumulated_text and request_info.group_id and request_info.group_key:
+                    await self._publish_chunk(rid, request_info)
+        except asyncio.CancelledError:
+            logger.debug(f"Publish task for request {rid} was cancelled")
+        except Exception as e:
+            logger.error(f"Error in publish loop for request {rid}: {e}", exc_info=True)
+
+    async def _publish_chunk(self, rid: str, request_info: HTTPRequestInfo, is_final: bool = False):
+        """
+        Encrypt and publish accumulated text to Nostr relay as a ChatEvent (Kind 42).
+        
+        Args:
+            rid: Request ID
+            request_info: HTTPRequestInfo object
+            is_final: Whether this is the final chunk (request finished)
+        """
+        if not NOSTR_AVAILABLE:
+            return
+        
+        if not request_info.accumulated_text:
+            return
+        
+        try:
+            pub = get_publisher()
+            if pub is None:
+                logger.warning(f"No Nostr publisher available, skipping publish for request {rid}")
+                return
+            
+            payload = PayloadBuilder.build_chat_message(
+                text=request_info.accumulated_text,
+                model=request_info.model,
+                agent_name=request_info.agent_name or "prakasa-agent",
+                reply_to=request_info.reply_to_event_id,
+                agent_avatar=request_info.agent_avatar
+            )
+            encrypted_content = GroupV1Crypto.encrypt(payload, request_info.group_key)
+            event_tags = [["g", request_info.group_id]]
+            if request_info.reply_to_event_id:
+                event_tags.append(["e", request_info.reply_to_event_id, "", "reply"])
+            
+
+            if request_info.user_pubkey:
+                event_tags.append(["p", request_info.user_pubkey])
+            
+
+            if rid:
+                event_tags.append(["request_id", rid])
+            if is_final:
+                event_tags.append(["final", "true"])
+            
+            chat_event = ChatEvent.from_encrypted_content(
+                encrypted_content=encrypted_content,
+                group_id=request_info.group_id,
+                tags=event_tags
+            )
+            pub.publish_event(chat_event)
+            logger.debug(
+                f"Published chat chunk for request {rid} (group_id={request_info.group_id[:8]}..., "
+                f"length={len(request_info.accumulated_text)}, is_final={is_final})"
+            )
+            request_info.accumulated_text = ""
+            
+        except Exception as e:
+            logger.error(f"Error publishing chat chunk for request {rid}: {e}", exc_info=True)
 
 
 class ErrorResponse(BaseModel):

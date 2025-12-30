@@ -130,6 +130,15 @@ class RequestHandler:
         # Add request_id and routing_table to request_data
         request_data["rid"] = str(request_id)
         request_data["routing_table"] = routing_table
+        
+        agent_name = self.scheduler_manage.get_model_name() if self.scheduler_manage else None
+        if agent_name:
+            if "extra_body" not in request_data:
+                request_data["extra_body"] = {}
+            
+            if "agent_name" not in request_data["extra_body"]:
+                request_data["extra_body"]["agent_name"] = agent_name
+        
         stub = self.get_stub(routing_table[0])
         is_stream = request_data.get("stream", False)
         try:
