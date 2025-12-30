@@ -25,6 +25,11 @@ DINF_SETTLEMENT_KIND = 30904
 DINF_EVALUATION_KIND = 30905
 
 
+INVITE_KIND = 4  
+CHAT_KIND = 42  
+REASONING_KIND = 20000  
+
+
 class SubspaceOpEvent(Event):
     """
     Base class for all Prakasa "subspace_op" events.
@@ -313,7 +318,118 @@ class EvaluationEvent(SubspaceOpEvent):
     OP = "dinf_evaluation"
 
 
+
+class InviteEvent(Event):
+    """
+    Kind 4 — Invite/Kick event (NIP-04 encrypted direct message).
+    
+    Content is encrypted using NIP-04 (AES-256-CBC) with ECDH shared secret.
+    Use `prakasa_nostr.crypto.Nip04Crypto` to encrypt/decrypt the content.
+    """
+
+    KIND = INVITE_KIND
+
+    @classmethod
+    def from_encrypted_content(
+        cls,
+        *,
+        encrypted_content: str,
+        recipient_pubkey: Optional[str] = None,
+        tags: Optional[List[List[str]]] = None,
+    ) -> "InviteEvent":
+        """
+        Create an invite event with pre-encrypted content.
+        
+        Args:
+            encrypted_content: NIP-04 encrypted JSON string (format: Base64(ciphertext)?iv=Base64(iv))
+            recipient_pubkey: Optional recipient pubkey for tagging
+            tags: Additional tags
+        """
+        event_tags: List[List[str]] = []
+        if recipient_pubkey:
+            event_tags.append(["p", recipient_pubkey])
+        if tags:
+            event_tags.extend(tags)
+
+        return cls(content=encrypted_content, kind=cls.KIND, tags=event_tags if event_tags else None)
+
+
+class ChatEvent(Event):
+    """
+    Kind 42 — Group chat message (AES-256-GCM encrypted).
+    
+    Content is encrypted using AES-GCM with group shared key.
+    Use `prakasa_nostr.crypto.GroupV1Crypto` to encrypt/decrypt the content.
+    """
+
+    KIND = CHAT_KIND
+
+    @classmethod
+    def from_encrypted_content(
+        cls,
+        *,
+        encrypted_content: str,
+        group_id: Optional[str] = None,
+        tags: Optional[List[List[str]]] = None,
+    ) -> "ChatEvent":
+        """
+        Create a chat event with pre-encrypted content.
+        
+        Args:
+            encrypted_content: AES-GCM encrypted JSON string (format: Base64(nonce + ciphertext + tag))
+            group_id: Optional group identifier for tagging
+            tags: Additional tags
+        """
+        event_tags: List[List[str]] = []
+        if group_id:
+            event_tags.append(["g", group_id])
+        if tags:
+            event_tags.extend(tags)
+
+        return cls(content=encrypted_content, kind=cls.KIND, tags=event_tags if event_tags else None)
+
+
+class ReasoningEvent(Event):
+    """
+    Kind 20000 — Reasoning process stream chunk (AES-256-GCM encrypted).
+    
+    Content is encrypted using AES-GCM with group shared key.
+    Use `prakasa_nostr.crypto.GroupV1Crypto` to encrypt/decrypt the content.
+    """
+
+    KIND = REASONING_KIND
+
+    @classmethod
+    def from_encrypted_content(
+        cls,
+        *,
+        encrypted_content: str,
+        group_id: Optional[str] = None,
+        task_event_id: Optional[str] = None,
+        tags: Optional[List[List[str]]] = None,
+    ) -> "ReasoningEvent":
+        """
+        Create a reasoning event with pre-encrypted content.
+        
+        Args:
+            encrypted_content: AES-GCM encrypted JSON string (format: Base64(nonce + ciphertext + tag))
+            group_id: Optional group identifier for tagging
+            task_event_id: Optional reference to related task event
+            tags: Additional tags
+        """
+        event_tags: List[List[str]] = []
+        if group_id:
+            event_tags.append(["g", group_id])
+        if task_event_id:
+            event_tags.append(["e", task_event_id])
+        if tags:
+            event_tags.extend(tags)
+
+        return cls(content=encrypted_content, kind=cls.KIND, tags=event_tags if event_tags else None)
+
+
 __all__ = [
+    # DINF event classes
     "SubspaceOpEvent",
     "TaskPublishEvent",
     "SchedulerAssignmentEvent",
@@ -321,7 +437,21 @@ __all__ = [
     "WorkloadProofEvent",
     "SettlementEvent",
     "EvaluationEvent",
-    # content helpers
+    # Standard Nostr event classes
+    "InviteEvent",
+    "ChatEvent",
+    "ReasoningEvent",
+    # Kind constants
+    "INVITE_KIND",
+    "CHAT_KIND",
+    "REASONING_KIND",
+    "DINF_TASK_PUBLISH_KIND",
+    "DINF_TASK_ASSIGN_KIND",
+    "DINF_TASK_RESULT_KIND",
+    "DINF_WORKLOAD_PROOF_KIND",
+    "DINF_SETTLEMENT_KIND",
+    "DINF_EVALUATION_KIND",
+    # Content helpers
     "ModelRef",
     "LayerRange",
     "Assignment",
