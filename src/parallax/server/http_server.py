@@ -157,7 +157,7 @@ class HTTPHandler:
         return_probs = request.get("return_probs", False)  # Check if probs requested
         chat_object = "chat.completion.chunk" if stream else "chat.completion"
         detokenizer = self.detokenizer_class(self.tokenizer, self.tokenmap)
-        create_time = time.time(
+        create_time = time.time()
         update_time = create_time
         
        

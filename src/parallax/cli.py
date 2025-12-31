@@ -326,6 +326,7 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
         if not nostr_section.get("privkey"):
             pk = PrivateKey()
             nostr_section["privkey"] = pk.bech32()
+            nostr_section["pubkey"] = pk.public_key.bech32()
             setattr(args, "nostr_privkey", nostr_section["privkey"])
             # Ensure relays array exists
             nostr_section.setdefault("relays", ["wss://nostr.parallel.hetu.org:8443"])
