@@ -345,7 +345,6 @@ def run_command(args, passthrough_args: list[str] | None = None):
     """Run the scheduler (equivalent to scripts/start.sh)."""
     # if not args.skip_upload:
     #     update_package_info()
-
     check_python_version()
 
     project_root = get_project_root()

@@ -17,7 +17,10 @@ from backend.server.static_config import (
     get_node_join_command,
     init_model_info_dict_cache,
 )
-from prakasa_nostr import init_global_publisher
+from prakasa_nostr import init_global_publisher, get_publisher
+from prakasa_nostr.events import INVITE_KIND, CHAT_KIND, REASONING_KIND
+import threading
+import time
 from parallax_utils.ascii_anime import display_parallax_run
 from parallax_utils.file_util import get_project_root
 from parallax_utils.logging_config import get_logger, set_log_level
@@ -255,6 +258,14 @@ if __name__ == "__main__":
     set_log_level(args.log_level)
     logger.info(f"args: {args}")
 
+    if args.model_name is None:
+        init_model_info_dict_cache(args.use_hfcache)
+
+    if args.log_level != "DEBUG":
+        display_parallax_run()
+
+    check_latest_release()
+
     # Initialize global Nostr publisher for scheduler node if configured.
     if getattr(args, "nostr_privkey", None):
         relays = getattr(args, "nostr_relays", None) or []
@@ -265,16 +276,25 @@ if __name__ == "__main__":
                 sid="prakasa-main",
                 role="scheduler",
             )
+            # Start event consumer thread
+            def nostr_event_consumer():
+                pub = get_publisher()
+                if pub is None:
+                    print("NostrPublisher not initialized; cannot consume events.")
+                    return
+                event_channel = pub.get_event_channel()
+                print("Nostr event consumer thread started")
+                while True:
+                    try:
+                        ev = event_channel.get(timeout=5)
+                        print(f"[nostr] Received event: kind={getattr(ev, 'kind', None)}, id={getattr(ev, 'id', None)}, content={getattr(ev, 'content', None)[:100] if getattr(ev, 'content', None) else None}")
+                    except Exception:
+                        # Timeout or other errors, continue
+                        pass
+            
+            threading.Thread(target=nostr_event_consumer, name="NostrEventConsumer", daemon=True).start()
         except Exception as e:
-            logger.warning(f"Failed to initialize Nostr publisher (scheduler): {e}")
-
-    if args.model_name is None:
-        init_model_info_dict_cache(args.use_hfcache)
-
-    if args.log_level != "DEBUG":
-        display_parallax_run()
-
-    check_latest_release()
+            print(f"Failed to initialize Nostr publisher (scheduler): {e}")
 
     scheduler_manage = SchedulerManage(
         initial_peers=args.initial_peers,
