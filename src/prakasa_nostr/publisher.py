@@ -51,7 +51,7 @@ class NostrPublisher:
     """
 
     # Default event kinds to subscribe
-    DEFAULT_LISTEN_KINDS = [1, INVITE_KIND, CHAT_KIND, REASONING_KIND]
+    DEFAULT_LISTEN_KINDS = [INVITE_KIND, CHAT_KIND, REASONING_KIND]
 
     def __init__(
         self,
@@ -61,11 +61,13 @@ class NostrPublisher:
         timeout: int = 6,
         sid: str = "prakasa-main",
         role: str = "node",
+        listen_kinds: Optional[List[int]] = None,
     ) -> None:
         self._private_key = PrivateKey.from_nsec(private_key_nsec)
         self._relay_manager = RelayManager(timeout=timeout)
         self._sid = sid
         self._role = role
+        self._listen_kinds = listen_kinds if listen_kinds is not None else self.DEFAULT_LISTEN_KINDS
 
         # Add relays
         for r in relays:
@@ -201,13 +203,13 @@ class NostrPublisher:
         """Background thread: poll relay_manager for new events and put into event_channel."""
         sub_id = None
         try:
-            sub_id = self.subscribe_events(self.DEFAULT_LISTEN_KINDS, limit=100)
+            sub_id = self.subscribe_events(self._listen_kinds, limit=100)
         except Exception as exc:
             logger.warning(f"Failed to subscribe to default nostr events: {exc}")
             return
 
         logger.info(
-            f"Nostr event listener started for kinds={self.DEFAULT_LISTEN_KINDS}, sub_id={sub_id}"
+            f"Nostr event listener started for kinds={self._listen_kinds}, sub_id={sub_id}"
         )
 
         while not self._stop.is_set():
@@ -307,6 +309,7 @@ def init_global_publisher(
     *,
     sid: str = "prakasa-main",
     role: str = "node",
+    listen_kinds: Optional[List[int]] = None,
 ) -> None:
     """
     Initialize the process-wide NostrPublisher.
@@ -328,6 +331,7 @@ def init_global_publisher(
             relays=relays,
             sid=sid,
             role=role,
+            listen_kinds=listen_kinds,
         )
     except Exception as exc:
         logging.getLogger(__name__).warning(
