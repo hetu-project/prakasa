@@ -2,6 +2,8 @@ import asyncio
 import json
 import time
 import uuid
+import queue
+from typing import Dict, Optional
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -19,8 +21,8 @@ from backend.server.static_config import (
 )
 from prakasa_nostr import init_global_publisher, get_publisher
 from prakasa_nostr.events import INVITE_KIND, CHAT_KIND, REASONING_KIND
+from prakasa_nostr.crypto import GroupV1Crypto, Nip04Crypto
 import threading
-import time
 from parallax_utils.ascii_anime import display_parallax_run
 from parallax_utils.file_util import get_project_root
 from parallax_utils.logging_config import get_logger, set_log_level
@@ -40,6 +42,114 @@ logger = get_logger(__name__)
 
 scheduler_manage = None
 request_handler = RequestHandler()
+
+# --- Group Key Management (In-Memory) ---
+class GroupKeyManager:
+    def __init__(self):
+        self._keys: Dict[str, str] = {}  
+
+    def add_key(self, group_id: str, key: str):
+        self._keys[group_id] = key
+        print(f"Added key for group {group_id}")
+
+    def get_key(self, group_id: str) -> Optional[str]:
+        return self._keys.get(group_id)
+
+group_key_manager = GroupKeyManager()
+
+async def process_nostr_events(target_model_name: str):
+    """Async loop to process Nostr events for this scheduler/agent."""
+    pub = get_publisher()
+    if pub is None:
+        return
+
+    event_channel = pub.get_event_channel()
+    print(f"Started Nostr event processing loop for model: {target_model_name}")
+
+    while True:
+        try:
+            try:
+                event = event_channel.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.5)
+                continue
+
+            if request_handler.scheduler_manage is None:
+                await asyncio.sleep(1)
+                continue
+
+            kind = getattr(event, "kind", None)
+            print(f"[Nostr] Received event: kind={kind}, id={getattr(event, 'id', 'unknown')[:8]}...")
+            
+            # --- Handle Kind 4 (Invite / Group Key Distribution) ---
+            if kind == INVITE_KIND:
+                try:
+                    priv_key = pub._private_key
+                    shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
+                    content = Nip04Crypto.decrypt(event.content, shared_secret)
+                    data = json.loads(content)
+                    
+                    if data.get("type") == "invite":
+                        group_id = data.get("group_id")
+                        key = data.get("key")
+                        if group_id and key:
+                            group_key_manager.add_key(group_id, key)
+                            print(f"Received invite for group {group_id}")
+                except Exception as e:
+                    print(f"Failed to process Kind 4 event {event.id}: {e}")
+
+            # --- Handle Kind 42 (Chat Request) ---
+            elif kind == CHAT_KIND:
+                tags = getattr(event, "tags", [])
+                model_tag = next((t[1] for t in tags if t[0] == "model"), None)
+                if model_tag != target_model_name:
+                    continue
+
+                try:
+                    group_id = next((t[1] for t in tags if t[0] == "d"), None)
+                    if not group_id:
+                        continue
+
+                    shared_key = group_key_manager.get_key(group_id)
+                    if not shared_key:
+                        print(f"No key found for group {group_id}, ignoring chat request.")
+                        continue
+
+                    payload = GroupV1Crypto.decrypt(event.content, shared_key)
+                    user_text = payload.get("text", "")
+                    
+                    if not user_text:
+                        continue
+
+                    print(f"Processing chat request from Nostr: {user_text[:50]}...")
+                    request_id = str(uuid.uuid4())
+                    received_ts = time.time()
+                    request_data = {
+                        "model": model_tag,
+                        "messages": [{"role": "user", "content": user_text}],
+                        "stream": True, 
+                        "extra_body": {
+                            "group_id": group_id,
+                            "group_key": shared_key,
+                            "reply_to_event_id": event.id,
+                            "user_pubkey": event.pubkey,
+                            "agent_name": target_model_name 
+                        }
+                    }
+                    response = await request_handler.v1_chat_completions(request_data, request_id, received_ts)
+                    if isinstance(response, StreamingResponse):
+                        async for _ in response.body_iterator:
+                            pass 
+                    
+                    print(f"Finished processing Nostr request {request_id}")
+
+                except Exception as e:
+                    print(f"Error processing Kind 42 event {event.id}: {e}")
+
+        except Exception as e:
+            print(f"Error in Nostr event loop: {e}")
+            await asyncio.sleep(1)
+
 
 
 @app.post("/weight/refit")
@@ -115,11 +225,11 @@ async def scheduler_init(raw_request: Request):
     try:
         # If scheduler is already running, stop it first
         if scheduler_manage.is_running():
-            logger.info(f"Stopping existing scheduler to switch to model: {model_name}")
+            print(f"Stopping existing scheduler to switch to model: {model_name}")
             scheduler_manage.stop()
 
         # Start scheduler with new model
-        logger.info(
+        print(
             f"Initializing scheduler with model: {model_name}, init_nodes_num: {init_nodes_num}"
         )
         scheduler_manage.run(model_name, init_nodes_num, is_local_network)
@@ -256,7 +366,9 @@ app.mount(
 if __name__ == "__main__":
     args = parse_args()
     set_log_level(args.log_level)
-    logger.info(f"args: {args}")
+    print(f"args: {args}")
+    # Debug print to verify nostr args
+    print(f"Debug: nostr_privkey={getattr(args, 'nostr_privkey', 'Not Set')}")
 
     if args.model_name is None:
         init_model_info_dict_cache(args.use_hfcache)
@@ -276,23 +388,12 @@ if __name__ == "__main__":
                 sid="prakasa-main",
                 role="scheduler",
             )
-            # Start event consumer thread
-            def nostr_event_consumer():
-                pub = get_publisher()
-                if pub is None:
-                    print("NostrPublisher not initialized; cannot consume events.")
-                    return
-                event_channel = pub.get_event_channel()
-                print("Nostr event consumer thread started")
-                while True:
-                    try:
-                        ev = event_channel.get(timeout=5)
-                        print(f"[nostr] Received event: kind={getattr(ev, 'kind', None)}, id={getattr(ev, 'id', None)}, content={getattr(ev, 'content', None)[:100] if getattr(ev, 'content', None) else None}")
-                    except Exception:
-                        # Timeout or other errors, continue
-                        pass
-            
-            threading.Thread(target=nostr_event_consumer, name="NostrEventConsumer", daemon=True).start()
+
+            @app.on_event("startup")
+            async def start_nostr_consumer():
+                asyncio.create_task(process_nostr_events(args.model_name))
+                print("Registered Nostr event processing task")
+                
         except Exception as e:
             print(f"Failed to initialize Nostr publisher (scheduler): {e}")
 
