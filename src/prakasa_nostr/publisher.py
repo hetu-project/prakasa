@@ -35,6 +35,11 @@ from pynostr.event import Event
 from pynostr.filters import Filters, FiltersList
 from pynostr.key import PrivateKey
 from pynostr.relay_manager import RelayManager
+from pynostr.relay import Relay
+from pynostr.base_relay import RelayPolicy
+from pynostr.message_pool import MessagePool
+import tornado.ioloop
+from tornado import gen
 
 from parallax_utils.logging_config import get_logger
 from prakasa_nostr.events import INVITE_KIND, CHAT_KIND, REASONING_KIND
@@ -64,15 +69,18 @@ class NostrPublisher:
         listen_kinds: Optional[List[int]] = None,
     ) -> None:
         self._private_key = PrivateKey.from_nsec(private_key_nsec)
-        self._relay_manager = RelayManager(timeout=timeout)
+        # Separate RelayManager for publishing (used by publisher thread)
+        self._publish_relay_manager = RelayManager(timeout=timeout)
         self._sid = sid
         self._role = role
+        self._relays = relays
+        self._timeout = timeout
         self._listen_kinds = listen_kinds if listen_kinds is not None else self.DEFAULT_LISTEN_KINDS
 
-        # Add relays
+        # Add relays to publish manager
         for r in relays:
             try:
-                self._relay_manager.add_relay(r)
+                self._publish_relay_manager.add_relay(r, close_on_eose=False)
             except Exception as exc:
                 logger.warning(f"Failed to add Nostr relay {r}: {exc}")
 
@@ -84,6 +92,13 @@ class NostrPublisher:
 
         # Subscription tracking
         self._subscriptions: dict = {}
+        
+        # Listener state
+        self._listen_io_loop: Optional[tornado.ioloop.IOLoop] = None
+        self._listen_relays: List[Relay] = []
+        self._listen_message_pool: Optional[MessagePool] = None
+        self._listen_callback: Optional[tornado.ioloop.PeriodicCallback] = None
+        self._seen_event_ids: set = set()
 
         # Stop signal for background threads
         self._stop = threading.Event()
@@ -154,7 +169,7 @@ class NostrPublisher:
             if event is not None:
                 try:
                     event.sign(self._private_key.hex())
-                    self._relay_manager.publish_event(event)
+                    self._publish_relay_manager.publish_event(event)
                     
                     logger.debug(
                         "Published Nostr event kind=%s id=%s role=%s",
@@ -167,9 +182,9 @@ class NostrPublisher:
 
 
             try:
-                self._relay_manager.run_sync()
+                self._publish_relay_manager.run_sync()
             except Exception as exc:
-                logger.debug("RelayManager.run_sync failed: %s", exc)
+                logger.debug("PublishRelayManager.run_sync failed: %s", exc)
     
             if event is not None:
                  # Brief pause only if we published, to allow relay processing
@@ -183,67 +198,95 @@ class NostrPublisher:
     # Subscribing / Listening
     # -------------------------------------------------------------------------
 
-    def subscribe_events(self, kinds: List[int], limit: int = 100) -> str:
-        """Subscribe to nostr events of given kinds. Returns subscription_id."""
-        filters = FiltersList([Filters(kinds=kinds, limit=limit)])
-        sub_id = uuid.uuid1().hex
-        self._relay_manager.add_subscription_on_all_relays(sub_id, filters)
-        self._relay_manager.run_sync()
-        self._subscriptions[sub_id] = (filters, [])
-        logger.info(f"Subscribed to nostr events: kinds={kinds}, sub_id={sub_id}")
-        return sub_id
-
-    def unsubscribe_events(self, sub_id: str) -> None:
-        """Unsubscribe from nostr events by subscription_id."""
-        try:
-            self._relay_manager.close_subscription_on_all_relays(sub_id)
-            self._relay_manager.run_sync()
-            self._subscriptions.pop(sub_id, None)
-            logger.info(f"Unsubscribed nostr events: sub_id={sub_id}")
-        except Exception as exc:
-            logger.warning(f"Failed to unsubscribe nostr events: {exc}")
-
     def _listener_loop(self) -> None:
-        """Background thread: poll relay_manager for new events and put into event_channel."""
-        sub_id = None
-        try:
-            sub_id = self.subscribe_events(self._listen_kinds, limit=100)
-        except Exception as exc:
-            logger.warning(f"Failed to subscribe to default nostr events: {exc}")
+        """Background thread: use tornado io_loop to continuously listen for events."""
+        # Create a new IOLoop for this thread
+        self._listen_io_loop = tornado.ioloop.IOLoop()
+        self._listen_message_pool = MessagePool(first_response_only=False)
+        policy = RelayPolicy()
+        
+        # Create filters for subscription
+        filters = FiltersList([Filters(kinds=self._listen_kinds, limit=1)])
+        subscription_id = uuid.uuid1().hex
+        
+        # Create relay connections for each relay URL
+        for relay_url in self._relays:
+            try:
+                relay = Relay(
+                    relay_url, 
+                    self._listen_message_pool, 
+                    self._listen_io_loop, 
+                    policy, 
+                    timeout=self._timeout, 
+                    close_on_eose=False
+                )
+                relay.add_subscription(subscription_id, filters)
+                self._listen_relays.append(relay)
+            except Exception as exc:
+                logger.warning(f"Failed to create listener relay for {relay_url}: {exc}")
+        
+        if not self._listen_relays:
+            logger.warning("No listener relays available")
             return
-
+        
         logger.info(
-            f"Nostr event listener started for kinds={self._listen_kinds}, sub_id={sub_id}"
+            f"Nostr event listener started for kinds={self._listen_kinds}, sub_id={subscription_id}"
         )
-
-        while not self._stop.is_set():
-            events = self._poll_events(sub_id)
-            for ev in events:
-                try:
-                    self._event_channel.put_nowait(ev)
-                except queue.Full:
-                    logger.warning("Nostr event channel full; dropping event")
-            time.sleep(2)
-
-    def _poll_events(self, sub_id: Optional[str] = None) -> List[Event]:
-        """Poll and return received events for a subscription (or all if sub_id=None)."""
-        events = []
-        mp = getattr(self._relay_manager, "message_pool", None)
-        if mp is None:
-            return events
-
-        try:
-            while mp.has_events():
-                event_msg = mp.get_event()
+        
+        def poll_events():
+            """Periodically poll message pool for new events."""
+            if self._stop.is_set():
+                self._listen_io_loop.stop()
+                return
+                
+            # Check for new events
+            while self._listen_message_pool.has_events():
+                event_msg = self._listen_message_pool.get_event()
                 ev = getattr(event_msg, "event", None)
-                if ev is not None:
-                    msg_sub_id = getattr(event_msg, "subscription_id", None)
-                    if sub_id is None or msg_sub_id == sub_id:
-                        events.append(ev)
-        except Exception:
-            pass
-
-        return events
+                
+                if ev is not None and ev.id not in self._seen_event_ids:
+                    self._seen_event_ids.add(ev.id)
+                    try:
+                        self._event_channel.put_nowait(ev)
+                        logger.debug(f"Listener added event to channel: kind={ev.kind}, id={ev.id[:16]}...")
+                    except queue.Full:
+                        logger.warning("Nostr event channel full; dropping event")
+            
+            # Drain EOSE notices
+            while self._listen_message_pool.has_eose_notices():
+                self._listen_message_pool.get_eose_notice()
+        
+        @gen.coroutine
+        def connect_relays():
+            """Connect to all relays."""
+            for relay in self._listen_relays:
+                try:
+                    yield relay.connect()
+                    logger.debug(f"Connected to listener relay: {relay.url}")
+                except Exception as e:
+                    logger.warning(f"Failed to connect to relay {relay.url}: {e}")
+        
+        # Set up periodic callback to poll for events (every 500ms)
+        self._listen_callback = tornado.ioloop.PeriodicCallback(poll_events, 500)
+        self._listen_callback.start()
+        
+        # Spawn the connection in background (non-blocking)
+        self._listen_io_loop.spawn_callback(connect_relays)
+        
+        try:
+            # Keep the io_loop running to receive WebSocket messages
+            self._listen_io_loop.start()
+        except Exception as e:
+            logger.warning(f"Listener io_loop error: {e}")
+        finally:
+            if self._listen_callback:
+                self._listen_callback.stop()
+            for relay in self._listen_relays:
+                try:
+                    relay.close()
+                except Exception:
+                    pass
+            logger.debug("Listener loop stopped")
 
     # -------------------------------------------------------------------------
     # Internal Helpers
@@ -251,7 +294,7 @@ class NostrPublisher:
 
     def _drain_message_pool(self) -> None:
         """Drain ok notices and events from the relay manager's message pool."""
-        mp = getattr(self._relay_manager, "message_pool", None)
+        mp = getattr(self._publish_relay_manager, "message_pool", None)
         if mp is None:
             return
 
@@ -285,6 +328,14 @@ class NostrPublisher:
     def shutdown(self) -> None:
         """Stop all background threads and close relay connections."""
         self._stop.set()
+        
+        # Stop listener io_loop if running
+        if self._listen_io_loop is not None:
+            try:
+                self._listen_io_loop.add_callback(self._listen_io_loop.stop)
+            except Exception:
+                pass
+        
         try:
             self._publisher_thread.join(timeout=2.0)
         except Exception:
@@ -294,9 +345,10 @@ class NostrPublisher:
         except Exception:
             pass
         try:
-            self._relay_manager.close()
+            self._publish_relay_manager.close()
         except Exception:
             pass
+        # Listener relays are closed in _listener_loop finally block
         logger.info("NostrPublisher shutdown complete")
 
 

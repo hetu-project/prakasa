@@ -16,8 +16,9 @@ listen_kinds_list = [DINF_TASK_PUBLISH_KIND, DINF_TASK_ASSIGN_KIND, DINF_TASK_RE
 pk = PrivateKey()
 privkey_nsec = pk.bech32()  # Your hex-encoded Nostr private key here
 
+relays = ["ws://62.72.41.239:10545"]
 # Initialize once at startup
-init_global_publisher(privkey_nsec, relays=["wss://nostr.parallel.hetu.org:8443"], listen_kinds=listen_kinds_list)
+init_global_publisher(privkey_nsec, relays=relays, listen_kinds=listen_kinds_list)
 
 # Get publisher
 pub = get_publisher()
@@ -26,6 +27,7 @@ if pub is None:
     sys.exit(1)
 
 print(f"Listening for Nostr events with kinds: {listen_kinds_list}")
+print(f"relayers: {relays}")
 print("Press Ctrl+C to exit\n")
 
 # Consume received events from channel
