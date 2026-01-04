@@ -154,7 +154,7 @@ if __name__ == "__main__":
                 log_level=args.log_level,
                 nostr_privkey=getattr(args, "nostr_privkey", None),
                 nostr_relays=getattr(args, "nostr_relays", None) or [],
-                account=getattr(args, "account", None),
+                account=getattr(args, "eth_account", None),
             )
 
             # Launch all executor processes (including tp_rank=0)
@@ -206,7 +206,7 @@ if __name__ == "__main__":
                 log_level=args.log_level,
                 nostr_privkey=getattr(args, "nostr_privkey", None),
                 nostr_relays=getattr(args, "nostr_relays", None) or [],
-                account=getattr(args, "account", None),
+                account=getattr(args, "eth_account", None),
             )
 
             # Wait for layer allocation from scheduler (via shared state)

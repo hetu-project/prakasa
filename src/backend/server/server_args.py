@@ -44,6 +44,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--enable-weight-refit", type=bool, default=False, help="Enable online weight refit"
     )
+    parser.add_argument(
+        "--eth-account",
+        type=str,
+        default=None,
+        help="EVM account address for the scheduler node",
+    )
 
     # Nostr configuration (forwarded from prakasa CLI)
     parser.add_argument(

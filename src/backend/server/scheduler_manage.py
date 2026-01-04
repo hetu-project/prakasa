@@ -34,6 +34,7 @@ class SchedulerManage:
         http_port: int = 3001,
         use_hfcache: bool = False,
         enable_weight_refit: bool = False,
+        eth_account: str = None,
     ):
         """Initialize the manager with networking bootstrap parameters."""
         self.initial_peers = initial_peers
@@ -44,6 +45,7 @@ class SchedulerManage:
         self.http_port = http_port
         self.use_hfcache = use_hfcache
         self.enable_weight_refit = enable_weight_refit
+        self.eth_account = eth_account
         self.model_name = None
         self.init_nodes_num = None
         self.scheduler = None
@@ -75,6 +77,8 @@ class SchedulerManage:
             send_to_peer_addr="",
             block_start_index=0,
             block_end_index=1,
+            node_id=self.node_id,
+            account=self.eth_account,
         )
 
     def is_running(self):

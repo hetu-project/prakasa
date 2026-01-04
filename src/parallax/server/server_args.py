@@ -298,7 +298,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--account",
+        "--eth-account",
         type=str,
         default=None,
         help="EVM address for the worker node (e.g., 0x789...)",

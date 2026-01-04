@@ -249,6 +249,8 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                     args.init_nodes_num = cmd_conf.get("init_nodes_num")
             if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
                 args.use_relay = bool(cmd_conf.get("use_relay"))
+            if not _cli_flag_provided(["--eth-account"]) and "eth_account" in cmd_conf:
+                args.eth_account = cmd_conf.get("eth_account")
 
             # Nostr options for scheduler
             if not _cli_flag_provided(["--nostr-privkey"]) and "privkey" in nostr_conf:
@@ -277,8 +279,8 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 args.log_level = cmd_conf.get("log_level")
             if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
                 args.use_relay = bool(cmd_conf.get("use_relay"))
-            if not _cli_flag_provided(["--account"]) and "account" in cmd_conf:
-                args.account = cmd_conf.get("account")
+            if not _cli_flag_provided(["--eth-account"]) and "eth_account" in cmd_conf:
+                args.eth_account = cmd_conf.get("eth_account")
 
             # Nostr options for worker
             if not _cli_flag_provided(["--nostr-privkey"]) and "privkey" in nostr_conf:
@@ -373,6 +375,11 @@ def run_command(args, passthrough_args: list[str] | None = None):
             "Using public relay server to help nodes and the scheduler establish a connection (remote mode). Your IP address will be reported to the relay server to help establish the connection."
         )
 
+    # EVM account for scheduler
+    eth_account = getattr(args, "eth_account", None)
+    if eth_account:
+        cmd.extend(["--eth-account", eth_account])
+
     # Nostr options for scheduler backend
     nostr_privkey = getattr(args, "nostr_privkey", None)
     nostr_relays = getattr(args, "nostr_relays", None) or []
@@ -423,8 +430,8 @@ def join_command(args, passthrough_args: list[str] | None = None):
     cmd.extend(["--scheduler-addr", args.scheduler_addr])
 
 
-    if args.account is not None:
-        cmd.extend(["--account", args.account])
+    if args.eth_account is not None:
+        cmd.extend(["--eth-account", args.eth_account])
 
     if args.log_level:
         cmd.extend(["--log-level", args.log_level])
@@ -593,6 +600,12 @@ Examples:
         help="Path to YAML config file (values used when CLI doesn't provide them)",
     )
     run_parser.add_argument(
+        "--eth-account",
+        type=str,
+        default=None,
+        help="EVM account address for the scheduler node",
+    )
+    run_parser.add_argument(
         "--nostr-privkey",
         type=str,
         default=None,
@@ -624,7 +637,7 @@ Examples:
         "-u", "--skip-upload", action="store_true", help="Skip upload package info"
     )
     join_parser.add_argument(
-        "--account",
+        "--eth-account",
         type=str,
         default=None,
         help="EVM address for the worker node (e.g., 0x789...)",
