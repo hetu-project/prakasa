@@ -145,35 +145,39 @@ class NostrPublisher:
     def _publisher_loop(self) -> None:
         """Background loop that signs and publishes events."""
         while not self._stop.is_set():
+            event = None
             try:
-                event: Event = self._publish_queue.get(timeout=0.5)
+                event = self._publish_queue.get(timeout=0.5)
             except queue.Empty:
-                continue
+                pass  
+
+            if event is not None:
+                try:
+                    event.sign(self._private_key.hex())
+                    self._relay_manager.publish_event(event)
+                    
+                    logger.debug(
+                        "Published Nostr event kind=%s id=%s role=%s",
+                        getattr(event, "kind", None),
+                        getattr(event, "id", None),
+                        self._role,
+                    )
+                except Exception as exc:
+                    logger.warning(f"Failed to publish Nostr event: {exc}")
+
 
             try:
-                event.sign(self._private_key.hex())
-                self._relay_manager.publish_event(event)
-
-                # Flush pending network ops
-                try:
-                    self._relay_manager.run_sync()
-                except Exception as exc:
-                    logger.debug("RelayManager.run_sync failed: %s", exc)
-
-                # Brief pause to allow messages to be processed by relays
-                time.sleep(0.5)
-
-                # Drain ok notices and events from message pool
-                self._drain_message_pool()
-
-                logger.debug(
-                    "Published Nostr event kind=%s id=%s role=%s",
-                    getattr(event, "kind", None),
-                    getattr(event, "id", None),
-                    self._role,
-                )
+                self._relay_manager.run_sync()
             except Exception as exc:
-                logger.warning(f"Failed to publish Nostr event: {exc}")
+                logger.debug("RelayManager.run_sync failed: %s", exc)
+    
+            if event is not None:
+                 # Brief pause only if we published, to allow relay processing
+                time.sleep(0.5)
+            else:
+                # Brief pause to avoid busy loop when idle
+                time.sleep(0.1)
+
 
     # -------------------------------------------------------------------------
     # Subscribing / Listening
