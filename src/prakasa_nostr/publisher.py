@@ -205,11 +205,11 @@ class NostrPublisher:
         self._listen_message_pool = MessagePool(first_response_only=False)
         policy = RelayPolicy()
         
-        # Create filters for subscription
-        filters = FiltersList([Filters(kinds=self._listen_kinds, limit=1)])
+
+        current_time = int(time.time())
+        filters = FiltersList([Filters(kinds=self._listen_kinds, since=current_time)])
         subscription_id = uuid.uuid1().hex
         
-        # Create relay connections for each relay URL
         for relay_url in self._relays:
             try:
                 relay = Relay(

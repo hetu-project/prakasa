@@ -1,8 +1,10 @@
 import asyncio
 import json
 import time
+import traceback
 import uuid
 import queue
+from contextlib import asynccontextmanager
 from typing import Dict, Optional
 
 import uvicorn
@@ -22,13 +24,38 @@ from backend.server.static_config import (
 from prakasa_nostr import init_global_publisher, get_publisher
 from prakasa_nostr.events import INVITE_KIND, CHAT_KIND, REASONING_KIND
 from prakasa_nostr.crypto import GroupV1Crypto, Nip04Crypto
+from pynostr.filters import Filters, FiltersList
+from pynostr.relay import Relay
+from pynostr.base_relay import RelayPolicy
+from pynostr.message_pool import MessagePool
+import tornado.ioloop
+import time
 import threading
 from parallax_utils.ascii_anime import display_parallax_run
 from parallax_utils.file_util import get_project_root
 from parallax_utils.logging_config import get_logger, set_log_level
 from parallax_utils.version_check import check_latest_release
 
-app = FastAPI()
+logger = get_logger(__name__)
+
+scheduler_manage = None
+request_handler = RequestHandler()
+
+# Global variable to store Nostr startup task info
+_nostr_startup_info = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for FastAPI."""
+
+    if _nostr_startup_info is not None:
+        model_name = _nostr_startup_info
+        asyncio.create_task(process_nostr_events(model_name))
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,10 +65,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-logger = get_logger(__name__)
-
-scheduler_manage = None
-request_handler = RequestHandler()
 
 # --- Group Key Management (In-Memory) ---
 class GroupKeyManager:
@@ -56,6 +79,112 @@ class GroupKeyManager:
         return self._keys.get(group_id)
 
 group_key_manager = GroupKeyManager()
+
+
+def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10):
+    """Restore group keys from historical Kind 4 events on relays (synchronous)."""
+    if not pub or not relays:
+        return
+    
+    try:
+        priv_key = pub._private_key
+        our_pubkey = priv_key.public_key.hex()
+        print(f"Restoring group keys from relays...")
+        message_pool = MessagePool(first_response_only=False)
+        policy = RelayPolicy()
+        relay_connections = []
+        
+        filters = FiltersList([
+            Filters(
+                kinds=[INVITE_KIND],
+                limit=100,  
+            )
+        ])
+        subscription_id = uuid.uuid4().hex
+        
+        for relay_url in relays:
+            try:
+                io_loop = tornado.ioloop.IOLoop()
+                relay = Relay(
+                    relay_url,
+                    message_pool,
+                    io_loop,
+                    policy,
+                    timeout=timeout,
+                    close_on_eose=True
+                )
+                relay.add_subscription(subscription_id, filters)
+                relay_connections.append((relay, io_loop))
+            except Exception as e:
+                print(f"Failed to create relay connection for {relay_url}: {e}")
+        
+        if not relay_connections:
+            print("No relay connections available for key restore")
+            return
+        
+        events_received = []
+        start_time = time.time()
+        
+        def collect_events():
+            """Collect events from message pool."""
+            while time.time() - start_time < timeout:
+                if message_pool.has_events():
+                    event_msg = message_pool.get_event()
+                    ev = getattr(event_msg, "event", None)
+                    if ev is not None:
+                        events_received.append(ev)
+                elif message_pool.has_eose_notices():
+                    message_pool.get_eose_notice()
+                    break
+                time.sleep(0.1)
+        
+
+        for relay, io_loop in relay_connections:
+            try:
+                io_loop.run_sync(lambda: relay.connect(), timeout=timeout)
+                collect_thread = threading.Thread(target=collect_events, daemon=True)
+                collect_thread.start()
+                collect_thread.join(timeout=timeout)
+            except Exception as e:
+                print(f"Failed to connect to relay {relay.url}: {e}")
+            finally:
+                try:
+                    relay.close()
+                except Exception:
+                    pass
+        
+        restored_count = 0
+        for event in events_received:
+            try:
+                tags = getattr(event, "tags", [])
+                p_tags = [t[1] for t in tags if len(t) > 1 and t[0] == "p"]
+                if our_pubkey not in p_tags:
+                    continue
+                
+                shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
+                content = Nip04Crypto.decrypt(event.content, shared_secret)
+                content = content.strip()
+                
+                try:
+                    data = json.loads(content)
+                    if data.get("type") == "invite":
+                        group_id = data.get("group_id")
+                        key = data.get("key")
+                        if group_id and key:
+                            if group_key_manager.get_key(group_id) is None:
+                                group_key_manager.add_key(group_id, key)
+                                restored_count += 1
+                except json.JSONDecodeError:
+                    continue
+            except Exception as e:
+                print(f"Failed to restore key from event {event.id[:8] if hasattr(event, 'id') else 'unknown'}...: {e}")
+                continue
+        
+        print(f"Restored {restored_count} group key(s) from relay history")
+            
+    except Exception as e:
+        print(f"Failed to restore group keys from relay: {e}")
+
 
 async def process_nostr_events(target_model_name: str):
     """Async loop to process Nostr events for this scheduler/agent."""
@@ -87,16 +216,23 @@ async def process_nostr_events(target_model_name: str):
                     priv_key = pub._private_key
                     shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
                     content = Nip04Crypto.decrypt(event.content, shared_secret)
-                    data = json.loads(content)
-                    
-                    if data.get("type") == "invite":
-                        group_id = data.get("group_id")
-                        key = data.get("key")
-                        if group_id and key:
-                            group_key_manager.add_key(group_id, key)
-                            print(f"Received invite for group {group_id}")
+                    content = content.strip()
+                    try:
+                        data = json.loads(content)
+                        if data.get("type") == "invite":
+                            group_id = data.get("group_id")
+                            key = data.get("key")
+                            if group_id and key:
+                                group_key_manager.add_key(group_id, key)
+                                print(f"Received invite for group {group_id}")
+                        else:
+                            print(f"Kind 4 event {event.id[:8]}... is not an invite (type: {data.get('type', 'unknown')})")
+                    except json.JSONDecodeError:
+                        print(f"Kind 4 event {event.id[:8]}... is not in JSON format (likely a regular DM, skipping)")
+                        continue
+                        
                 except Exception as e:
-                    print(f"Failed to process Kind 4 event {event.id}: {e}")
+                    print(f"Failed to process Kind 4 event {event.id[:8]}...: {e}")
 
             # --- Handle Kind 42 (Chat Request) ---
             elif kind == CHAT_KIND:
@@ -112,7 +248,6 @@ async def process_nostr_events(target_model_name: str):
 
                     shared_key = group_key_manager.get_key(group_id)
                     if not shared_key:
-                        print(f"No key found for group {group_id}, ignoring chat request.")
                         continue
 
                     payload = GroupV1Crypto.decrypt(event.content, shared_key)
@@ -388,11 +523,16 @@ if __name__ == "__main__":
                 sid="prakasa-main",
                 role="scheduler",
             )
-
-            @app.on_event("startup")
-            async def start_nostr_consumer():
-                asyncio.create_task(process_nostr_events(args.model_name))
-                print("Registered Nostr event processing task")
+            # Set global variable for lifespan to use
+            _nostr_startup_info = args.model_name
+            
+            # Restore group keys from relay history after initialization
+            pub = get_publisher()
+            if pub and relays:
+                try:
+                    restore_group_keys_from_relay(pub, relays, timeout=10)
+                except Exception as e:
+                    logger.warning(f"Failed to restore group keys from relay during startup: {e}")
                 
         except Exception as e:
             print(f"Failed to initialize Nostr publisher (scheduler): {e}")
