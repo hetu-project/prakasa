@@ -199,7 +199,7 @@ class RPCConnectionHandler(ConnectionHandler):
                                 model_version=None,
                             )
                             assignment = Assignment(
-                                worker_pubkey=node.node_id,
+                                worker_pubkey=node.account,
                                 node_id=node.node_id,
                                 account=node.account,
                                 start_layer=start_layer,

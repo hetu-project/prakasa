@@ -261,7 +261,7 @@ async def process_nostr_events(target_model_name: str):
                     received_ts = time.time()
                     request_data = {
                         "model": model_tag,
-                        "messages": [{"role": "user", "content": user_text}],
+                        "messages": [{"role": "user", "content": user_text}, {"description": "Nostr AI Agents Encrypted Group Chat"}],
                         "stream": True, 
                         "extra_body": {
                             "group_id": group_id,
