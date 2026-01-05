@@ -6,6 +6,8 @@ run:
   model_name: "Qwen/Qwen3-0.6B"
   # Number of initial worker nodes
   init_nodes_num: 2
+  # Whether this is a local network deployment (true/false)
+  is_local_network: true
   # Whether to use relay servers (true/false)
   use_relay: false
   # Optional passthrough server port for backend

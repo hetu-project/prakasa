@@ -249,9 +249,10 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                     args.init_nodes_num = cmd_conf.get("init_nodes_num")
             if not _cli_flag_provided(["-r", "--use-relay"]) and "use_relay" in cmd_conf:
                 args.use_relay = bool(cmd_conf.get("use_relay"))
+            if not _cli_flag_provided(['-l', '--is-local-network']) and 'is_local_network' in cmd_conf:
+                args.is_local_network = bool(cmd_conf.get('is_local_network'))
             if not _cli_flag_provided(["--eth-account"]) and "eth_account" in cmd_conf:
                 args.eth_account = cmd_conf.get("eth_account")
-
             # Nostr options for scheduler
             if not _cli_flag_provided(["--nostr-privkey"]) and "privkey" in nostr_conf:
                 setattr(args, "nostr_privkey", nostr_conf.get("privkey"))
@@ -374,6 +375,13 @@ def run_command(args, passthrough_args: list[str] | None = None):
         logger.info(
             "Using public relay server to help nodes and the scheduler establish a connection (remote mode). Your IP address will be reported to the relay server to help establish the connection."
         )
+
+    # Local network mode
+    is_local_network = getattr(args, "is_local_network", None)
+    if is_local_network:
+        cmd.extend(["--is-local-network"])
+    elif is_local_network is None:
+        cmd.extend(["--is-local-network"])
 
     # EVM account for scheduler
     eth_account = getattr(args, "eth_account", None)
@@ -589,6 +597,10 @@ Examples:
     run_parser.add_argument("-m", "--model-name", type=str, help="Model name")
     run_parser.add_argument(
         "-r", "--use-relay", action="store_true", help="Use public relay servers"
+    )
+    run_parser.add_argument(
+        "-l", "--is-local-network", action="store_true", default=None,
+        help="Whether this is a local network deployment"
     )
     run_parser.add_argument(
         "-u", "--skip-upload", action="store_true", help="Skip upload package info"

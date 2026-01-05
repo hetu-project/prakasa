@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name", type=str, default=None, help="Model name")
     parser.add_argument("--init-nodes-num", type=int, default=None, help="Number of initial nodes")
     parser.add_argument(
-        "--is-local-network", type=bool, default=True, help="Whether to use local network"
+        "--is-local-network", action="store_true", default=False, help="Whether to use local network"
     )
     parser.add_argument(
         "--use-hfcache",
