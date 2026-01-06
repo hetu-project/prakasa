@@ -65,6 +65,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Nostr relay URL (can be specified multiple times)",
     )
+    parser.add_argument(
+        "--p2p-usage-api-url",
+        type=str,
+        default=None,
+        help="P2P usage API base URL for logging token usage",
+    )
 
     args = parser.parse_args()
 

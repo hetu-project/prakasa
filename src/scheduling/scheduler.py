@@ -10,6 +10,7 @@ import time
 from collections import deque
 from typing import Deque, Dict, List, Literal, Optional, Tuple
 
+import requests
 from parallax_utils.logging_config import get_logger
 from scheduling.layer_allocation import (
     DynamicProgrammingLayerAllocator,
@@ -43,6 +44,7 @@ class Scheduler:
         water_filling_max_iterations: int = 40,
         request_warm_up_for_reshard: int = 0,
         heartbeat_timeout: float = 60.0,
+        p2p_usage_api_url: Optional[str] = None,
     ) -> None:
         """Initialize the scheduler.
 
@@ -89,6 +91,7 @@ class Scheduler:
         self._request_queue: "queue.Queue[RequestSignal]" = queue.Queue()
         self.request_arrival_horizon_sec = request_arrival_horizon_sec
         self.heartbeat_timeout = heartbeat_timeout
+        self.p2p_usage_api_url = p2p_usage_api_url
         self._arrival_ts: Deque[float] = deque()
 
         # Event queues for main loop orchestration (thread-safe)
@@ -116,6 +119,10 @@ class Scheduler:
         self.refit_request = {}
         self.refit_set = set()
         self.last_refit_time = 0.0
+
+        # Track idle time for each worker
+        self._node_idle_time: Dict[str, float] = {}
+        self._node_was_idle: Dict[str, bool] = {}
 
         # Eager bootstrap for initial allocation if enough nodes are present
         try:
@@ -271,6 +278,9 @@ class Scheduler:
         if last_refit_time > 0.0:
             node.last_refit_time = last_refit_time
         node.last_heartbeat = time.time()
+        
+        self._track_idle_time(node)
+        
         # logger.debug(
         #     "Node updated: %s (requests=%s, latency_ms=%s, rtt_updates=%s)",
         #     node.node_id,
@@ -313,6 +323,85 @@ class Scheduler:
             )
         )
         self._wake_event.set()
+
+    def _track_idle_time(self, node: Node) -> None:
+        """Track and accumulate idle time for a worker node.
+        
+        When a worker is idle (current_requests == 0 and is_active == True),
+        accumulate idle time based on heartbeat interval (~10 seconds).
+        Every hour (3600 seconds) of accumulated idle time, log a message.
+        
+        Args:
+            node: The node to track idle time for
+        """
+        node_id = node.node_id
+        
+        is_idle = (
+            node.is_active 
+            and node.current_requests is not None 
+            and node.current_requests == 0
+        )
+        
+        # Heartbeat interval is approximately 10 seconds
+        heartbeat_interval = 10.0
+        
+        was_idle = self._node_was_idle.get(node_id, False)
+        
+        if is_idle:
+            if was_idle:
+                if node_id not in self._node_idle_time:
+                    self._node_idle_time[node_id] = 0.0
+                self._node_idle_time[node_id] += heartbeat_interval
+            else:
+                self._node_idle_time[node_id] = heartbeat_interval
+            
+            self._node_was_idle[node_id] = True
+            
+            total_idle_time = self._node_idle_time[node_id]
+            if total_idle_time >= 3600.0:
+                hours = int(total_idle_time // 3600)
+                remaining_seconds = total_idle_time % 3600
+                account_info = f" (account: {node.account})" if node.account else ""
+                logger.info(
+                    f"Worker {node_id[:16]}...{account_info} has accumulated "
+                    f"{hours} hour(s) of idle time (total: {total_idle_time:.1f} seconds)"
+                )
+                
+                if node.account and self.p2p_usage_api_url:
+                    self._call_reward_api(node.account)
+                
+                self._node_idle_time[node_id] = remaining_seconds
+        else:
+            self._node_was_idle[node_id] = False
+            self._node_idle_time.pop(node_id, None)
+
+    def _call_reward_api(self, address: str) -> None:
+        """Call the P2P reward API to grant credit for idle time.
+        
+        Args:
+            address: Worker's EVM address
+        """
+        if not self.p2p_usage_api_url:
+            return
+        
+        try:
+            url = f"{self.p2p_usage_api_url.rstrip('/')}/api/v1/subnet/p2p/reward"
+            payload = {
+                "address": address,
+                "reward_type": "credit",
+                "amount": "2",
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code == 200:
+                logger.info(f"Successfully called reward API for worker {address}")
+            else:
+                logger.warning(
+                    f"Failed to call reward API for worker {address}: "
+                    f"HTTP {response.status_code}, response: {response.text}"
+                )
+        except Exception as e:
+            logger.error(f"Error calling reward API for worker {address}: {e}", exc_info=True)
 
     def checking_node_heartbeat(self) -> None:
         """Check the heartbeat of all nodes."""

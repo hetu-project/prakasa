@@ -81,106 +81,160 @@ class GroupKeyManager:
 group_key_manager = GroupKeyManager()
 
 
-def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10):
-    """Restore group keys from historical Kind 4 events on relays (synchronous)."""
+def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10, max_pages: int = 10):
+    """Restore group keys from historical Kind 4 events on relays (synchronous).
+    
+    Uses pagination to query historical events in batches, going backwards in time.
+    This ensures we can retrieve keys even if there are many events on the relay.
+    
+    Args:
+        pub: Nostr publisher instance
+        relays: List of relay URLs
+        timeout: Timeout per relay connection (seconds)
+        max_pages: Maximum number of pages to query (each page = 1000 events)
+    """
     if not pub or not relays:
         return
     
     try:
         priv_key = pub._private_key
         our_pubkey = priv_key.public_key.hex()
-        print(f"Restoring group keys from relays...")
-        message_pool = MessagePool(first_response_only=False)
-        policy = RelayPolicy()
-        relay_connections = []
+        print(f"Restoring group keys from relays (our pubkey: {our_pubkey[:16]}...)...")
         
-        filters = FiltersList([
-            Filters(
-                kinds=[INVITE_KIND],
-                limit=100,  
-            )
-        ])
-        subscription_id = uuid.uuid4().hex
-        
-        for relay_url in relays:
-            try:
-                io_loop = tornado.ioloop.IOLoop()
-                relay = Relay(
-                    relay_url,
-                    message_pool,
-                    io_loop,
-                    policy,
-                    timeout=timeout,
-                    close_on_eose=True
-                )
-                relay.add_subscription(subscription_id, filters)
-                relay_connections.append((relay, io_loop))
-            except Exception as e:
-                print(f"Failed to create relay connection for {relay_url}: {e}")
-        
-        if not relay_connections:
-            print("No relay connections available for key restore")
-            return
-        
-        events_received = []
-        start_time = time.time()
-        
-        def collect_events():
-            """Collect events from message pool."""
-            while time.time() - start_time < timeout:
-                if message_pool.has_events():
-                    event_msg = message_pool.get_event()
-                    ev = getattr(event_msg, "event", None)
-                    if ev is not None:
-                        events_received.append(ev)
-                elif message_pool.has_eose_notices():
-                    message_pool.get_eose_notice()
-                    break
-                time.sleep(0.1)
-        
-
-        for relay, io_loop in relay_connections:
-            try:
-                io_loop.run_sync(lambda: relay.connect(), timeout=timeout)
-                collect_thread = threading.Thread(target=collect_events, daemon=True)
-                collect_thread.start()
-                collect_thread.join(timeout=timeout)
-            except Exception as e:
-                print(f"Failed to connect to relay {relay.url}: {e}")
-            finally:
-                try:
-                    relay.close()
-                except Exception:
-                    pass
-        
+        current_time = int(time.time())
+        page_size = 1000  
+        days_per_page = 30  
+        seconds_per_page = days_per_page * 24 * 3600
         restored_count = 0
-        for event in events_received:
-            try:
-                tags = getattr(event, "tags", [])
-                p_tags = [t[1] for t in tags if len(t) > 1 and t[0] == "p"]
-                if our_pubkey not in p_tags:
-                    continue
-                
-                shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
-                content = Nip04Crypto.decrypt(event.content, shared_secret)
-                content = content.strip()
-                
-                try:
-                    data = json.loads(content)
-                    if data.get("type") == "invite":
-                        group_id = data.get("group_id")
-                        key = data.get("key")
-                        if group_id and key:
-                            if group_key_manager.get_key(group_id) is None:
-                                group_key_manager.add_key(group_id, key)
-                                restored_count += 1
-                except json.JSONDecodeError:
-                    continue
-            except Exception as e:
-                print(f"Failed to restore key from event {event.id[:8] if hasattr(event, 'id') else 'unknown'}...: {e}")
-                continue
+        total_events_received = 0
         
-        print(f"Restored {restored_count} group key(s) from relay history")
+        for page in range(max_pages):
+            if page == 0:
+                until_time = current_time
+                since_time = current_time - seconds_per_page
+            else:
+                until_time = since_time  
+                since_time = until_time - seconds_per_page  
+            
+            print(f"Querying page {page + 1}/{max_pages} (since={since_time}, until={until_time})...")
+            
+            message_pool = MessagePool(first_response_only=False)
+            policy = RelayPolicy()
+            relay_connections = []
+            
+            filters = FiltersList([
+                Filters(
+                    kinds=[INVITE_KIND],
+                    since=since_time,
+                    until=until_time,
+                    limit=page_size,
+                )
+            ])
+            subscription_id = uuid.uuid4().hex
+        
+            for relay_url in relays:
+                try:
+                    io_loop = tornado.ioloop.IOLoop()
+                    relay = Relay(
+                        relay_url,
+                        message_pool,
+                        io_loop,
+                        policy,
+                        timeout=timeout,
+                        close_on_eose=True
+                    )
+                    relay.add_subscription(subscription_id, filters)
+                    relay_connections.append((relay, io_loop))
+                except Exception as e:
+                    print(f"Failed to create relay connection for {relay_url}: {e}")
+            
+            if not relay_connections:
+                if page == 0:
+                    print("No relay connections available for key restore")
+                    return
+                else:
+                    break
+            
+            events_received = []
+            start_time = time.time()
+            
+            def collect_events():
+                """Collect events from message pool."""
+                while time.time() - start_time < timeout:
+                    if message_pool.has_events():
+                        event_msg = message_pool.get_event()
+                        ev = getattr(event_msg, "event", None)
+                        if ev is not None:
+                            events_received.append(ev)
+                    elif message_pool.has_eose_notices():
+                        message_pool.get_eose_notice()
+                        break
+                    time.sleep(0.1)
+            
+
+            for relay, io_loop in relay_connections:
+                try:
+                    io_loop.run_sync(lambda: relay.connect(), timeout=timeout)
+                    collect_thread = threading.Thread(target=collect_events, daemon=True)
+                    collect_thread.start()
+                    collect_thread.join(timeout=timeout)
+                except Exception as e:
+                    print(f"Failed to connect to relay {relay.url}: {e}")
+                finally:
+                    try:
+                        relay.close()
+                    except Exception:
+                        pass
+            
+            if len(events_received) == 0:
+                print(f"No events found in this time range, stopping pagination")
+                break
+            
+            print(f"  Received {len(events_received)} events in this page")
+            total_events_received += len(events_received)
+            
+            page_restored = 0
+            for event in events_received:
+                try:
+                    tags = getattr(event, "tags", [])
+                    p_tags = [t[1] for t in tags if len(t) > 1 and t[0] == "p"]
+                    # Filter events: only process events where our pubkey is in the p tags
+                    if our_pubkey not in p_tags:
+                        continue
+                    
+                    shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
+                    content = Nip04Crypto.decrypt(event.content, shared_secret)
+                    content = content.strip()
+                    
+                    try:
+                        data = json.loads(content)
+                        if data.get("type") == "invite":
+                            group_id = data.get("group_id")
+                            key = data.get("key")
+                            if group_id and key:
+                                if group_key_manager.get_key(group_id) is None:
+                                    group_key_manager.add_key(group_id, key)
+                                    restored_count += 1
+                                    page_restored += 1
+                                    print(f"  ✓ Restored key for group {group_id}")
+
+
+                    except json.JSONDecodeError:
+                        continue
+
+                except Exception as e:
+                    print(f"Failed to restore key from event {event.id[:8] if hasattr(event, 'id') else 'unknown'}...: {e}")
+                    continue
+            
+            if page_restored > 0:
+                print(f"  Restored {page_restored} key(s) from this page")
+            
+
+            if len(events_received) < page_size:
+                print(f"Reached end of available events (got {len(events_received)} < {page_size})")
+                break
+        
+        print(f"Restored {restored_count} group key(s) from relay history (queried {total_events_received} total events)")
             
     except Exception as e:
         print(f"Failed to restore group keys from relay: {e}")
@@ -256,6 +310,8 @@ async def process_nostr_events(target_model_name: str):
                     if not user_text:
                         continue
 
+                    evm_address = next((t[1] for t in tags if t[0] == "evm_address"), None)
+
                     print(f"Processing chat request from Nostr: {user_text[:50]}...")
                     request_id = str(uuid.uuid4())
                     received_ts = time.time()
@@ -268,9 +324,12 @@ async def process_nostr_events(target_model_name: str):
                             "group_key": shared_key,
                             "reply_to_event_id": event.id,
                             "user_pubkey": event.pubkey,
-                            "agent_name": target_model_name 
+                            "agent_name": target_model_name,
                         }
                     }
+                    # Add evm_address to extra_body if present
+                    if evm_address:
+                        request_data["extra_body"]["evm_address"] = evm_address
                     response = await request_handler.v1_chat_completions(request_data, request_id, received_ts)
                     if isinstance(response, StreamingResponse):
                         async for _ in response.body_iterator:
@@ -550,9 +609,13 @@ if __name__ == "__main__":
         use_hfcache=args.use_hfcache,
         enable_weight_refit=args.enable_weight_refit,
         eth_account=args.eth_account,
+        p2p_usage_api_url=getattr(args, "p2p_usage_api_url", None),
     )
 
     request_handler.set_scheduler_manage(scheduler_manage)
+
+    if getattr(args, "p2p_usage_api_url", None):
+        request_handler.set_p2p_usage_api_url(args.p2p_usage_api_url)
 
     model_name = args.model_name
     init_nodes_num = args.init_nodes_num
