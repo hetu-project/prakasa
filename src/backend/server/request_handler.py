@@ -323,6 +323,12 @@ class RequestHandler:
         request_data["rid"] = str(request_id)
         request_data["routing_table"] = routing_table
         
+        # Store task_event_id in extra_body for downstream workload proof events
+        if "extra_body" not in request_data:
+            request_data["extra_body"] = {}
+        if task_evt_id:
+            request_data["extra_body"]["task_event_id"] = task_evt_id
+        
         # Log which workers are participating in this request
         logger.info(
             f"Request ID: {request_id} | Routing path: {routing_table} | "

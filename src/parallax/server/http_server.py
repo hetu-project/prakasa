@@ -43,9 +43,16 @@ logger = get_logger(__name__)
 
 
 try:
-    from prakasa_nostr import get_publisher
+    from prakasa_nostr import get_publisher, init_global_publisher
     from prakasa_nostr.crypto import GroupV1Crypto, PayloadBuilder
-    from prakasa_nostr.events import ChatEvent
+    from prakasa_nostr.events import (
+        ChatEvent,
+        LayerRange,
+        ModelRef,
+        WorkloadProofContent,
+        WorkloadProofEvent,
+        WorkloadProofMetrics,
+    )
     NOSTR_AVAILABLE = True
 except ImportError:
     NOSTR_AVAILABLE = False
@@ -113,6 +120,9 @@ class HTTPRequestInfo:
     user_pubkey: Optional[str] = None  # User public key (for p tag)
     agent_name: Optional[str] = None  # Agent name (from scheduler's model_name)
     agent_avatar: Optional[str] = None  # Agent avatar URL or identifier
+    # Nostr task tracking
+    task_event_id: Optional[str] = None  # Task event ID for workload proof
+    routing_table: Optional[List[str]] = None  # Routing table for workload proof
 
 
 class HTTPHandler:
@@ -127,8 +137,10 @@ class HTTPHandler:
         executor_input_ipc_name,
         executor_output_ipc_name,
         model_path_str,
+        eth_account: Optional[str] = None,
     ):
         self.asyncio_tasks = set()
+        self.eth_account = eth_account
         # Init inter-process communication
         context = zmq.asyncio.Context(2)
         self.send_to_executor = get_zmq_socket(context, zmq.PUSH, executor_input_ipc_name, True)
@@ -169,6 +181,8 @@ class HTTPHandler:
         user_pubkey = extra_body.get("user_pubkey") or request.get("user_pubkey")
         agent_name = extra_body.get("agent_name") or request.get("agent_name") or "prakasa-agent"
         agent_avatar = extra_body.get("agent_avatar") or request.get("agent_avatar")
+        task_event_id = extra_body.get("task_event_id") or request.get("task_event_id")
+        routing_table = request.get("routing_table")
         
         request_info = HTTPRequestInfo(
             id=rid,
@@ -185,6 +199,8 @@ class HTTPHandler:
             user_pubkey=user_pubkey,
             agent_name=agent_name,
             agent_avatar=agent_avatar,
+            task_event_id=task_event_id,
+            routing_table=routing_table,
         )
         if stream:
             request_info.token_queue = asyncio.Queue()
@@ -465,8 +481,80 @@ class HTTPHandler:
                 if request_info.accumulated_text and request_info.group_id and request_info.group_key:
                     await self._publish_chunk(rid, request_info, is_final=True)
                 
+                # Publish workload proof event for single-node or last-hop scenarios
+                self._publish_workload_proof(request_info)
+                
                 if request_info.stream:
                     await request_info.token_queue.put(None)  # Sentinel for stream end
+
+    def _publish_workload_proof(self, request_info: HTTPRequestInfo):
+        """Publish a CIP-09 workload proof event for completed inference request (best-effort).
+        
+        This is called when a request finishes to record the workload proof,
+        especially for single-node scenarios where send_notify in p2p/server.py
+        might not be triggered.
+        """
+        if not NOSTR_AVAILABLE:
+            return
+        
+        try:
+            pub = get_publisher()
+            if pub is None:
+                return
+            
+            # Calculate latency
+            latency_ms = (request_info.update_time - request_info.create_time) * 1000.0
+            
+            # Calculate work units based on tokens
+            tokens_in = request_info.prompt_tokens
+            tokens_out = request_info.completion_tokens
+            work_units = float(max(1, tokens_in + tokens_out))
+            
+            metrics = WorkloadProofMetrics(
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+                batch_size=1,
+                wall_time_ms=latency_ms,
+                work_units=work_units,
+            )
+            
+            # Get model info from request
+            model_name = request_info.model or "unknown"
+            
+            # For single-node scenario, we don't have layer range info
+            # Use 0-1 as placeholder (full model)
+            # worker_pubkey will be filled by the signing process via pub.pubkey
+            worker_pubkey = pub.public_key if hasattr(pub, 'public_key') else None
+            content = WorkloadProofContent(
+                worker_pubkey=worker_pubkey,
+                node_id=None,
+                account=self.eth_account,
+                model=ModelRef(
+                    model_name=model_name,
+                    num_layers=1,  # Placeholder for single-node
+                    model_version=None,
+                ),
+                layer_range=LayerRange(
+                    start_layer=0,
+                    end_layer=1,
+                ),
+                metrics=metrics,
+                proof=None,
+            )
+            
+            event = WorkloadProofEvent.from_content(
+                sid="prakasa-main",
+                task_event_id=request_info.task_event_id,
+                result_event_id=None,
+                allocation_id=f"http:{request_info.id}",
+                account=self.eth_account,
+                content=content,
+                score=None,
+            )
+            pub.publish_event(event)
+            logger.debug(f"Published workload proof for request {request_info.id}")
+        except Exception as e:
+            logger.debug(f"Failed to publish workload proof event: {e}")
 
     async def create_handle_loop(self):
         """Create asyncio event loop task function"""
@@ -579,13 +667,18 @@ app = fastapi.FastAPI(
 
 
 async def init_app_states(
-    state: State, executor_input_ipc: str, executor_output_ipc: str, model_path: str
+    state: State,
+    executor_input_ipc: str,
+    executor_output_ipc: str,
+    model_path: str,
+    eth_account: Optional[str] = None,
 ):
     """Init FastAPI app states, including http handler, etc."""
     state.http_handler = HTTPHandler(
         executor_input_ipc,
         executor_output_ipc,
         model_path,
+        eth_account=eth_account,
     )
 
 
@@ -683,6 +776,9 @@ class ParallaxHttpServer:
         self.executor_input_ipc_name = args.executor_input_ipc
         self.executor_output_ipc_name = args.executor_output_ipc
         self.model_path = args.model_path
+        self.eth_account = getattr(args, "eth_account", None)
+        self.nostr_privkey = getattr(args, "nostr_privkey", None)
+        self.nostr_relays = getattr(args, "nostr_relays", None) or []
 
     async def run_uvicorn(self):
         """
@@ -711,12 +807,26 @@ class ParallaxHttpServer:
         1. The HTTP server and executor both run in the main process.
         2. Inter-process communication is done through IPC (each process uses a different port) via the ZMQ library.
         """
+        # Initialize Nostr publisher in this subprocess
+        if NOSTR_AVAILABLE and self.nostr_privkey:
+            try:
+                init_global_publisher(
+                    self.nostr_privkey,
+                    relays=self.nostr_relays,
+                    sid="prakasa-http",
+                    role="http-server",
+                )
+                logger.info("Initialized Nostr publisher in HTTP server subprocess")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Nostr publisher in HTTP server: {e}")
+        
         asyncio.run(
             init_app_states(
                 app.state,
                 self.executor_input_ipc_name,
                 self.executor_output_ipc_name,
                 self.model_path,
+                eth_account=self.eth_account,
             )
         )
         asyncio.run(self.run_tasks())

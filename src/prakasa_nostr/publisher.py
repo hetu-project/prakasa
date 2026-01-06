@@ -69,6 +69,7 @@ class NostrPublisher:
         listen_kinds: Optional[List[int]] = None,
     ) -> None:
         self._private_key = PrivateKey.from_nsec(private_key_nsec)
+        self.public_key = self._private_key.public_key.bech32()
         # Separate RelayManager for publishing (used by publisher thread)
         self._publish_relay_manager = RelayManager(timeout=timeout)
         self._sid = sid
