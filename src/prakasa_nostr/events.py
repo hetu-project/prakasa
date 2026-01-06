@@ -172,7 +172,8 @@ class SchedulerAssignmentEvent(SubspaceOpEvent):
 
         # For quick indexing, also tag each worker pubkey
         for a in content.assignments:
-            tags.append(["p", a.worker_pubkey])
+            if a.worker_pubkey:
+                tags.append(["p", a.worker_pubkey])
             if a.account:
                 tags.append(["account", a.account])
 

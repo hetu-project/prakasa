@@ -171,7 +171,7 @@ class NostrPublisher:
                     event.sign(self._private_key.hex())
                     self._publish_relay_manager.publish_event(event)
                     
-                    logger.debug(
+                    logger.info(
                         "Published Nostr event kind=%s id=%s role=%s",
                         getattr(event, "kind", None),
                         getattr(event, "id", None),

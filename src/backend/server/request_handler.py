@@ -11,7 +11,13 @@ from backend.server.constants import NODE_STATUS_AVAILABLE
 from parallax_utils.logging_config import get_logger
 from parallax_utils.request_metrics import get_request_metrics
 from prakasa_nostr import get_publisher
-from prakasa_nostr.events import TaskPublishEvent
+from prakasa_nostr.events import (
+    Assignment,
+    ModelRef,
+    SchedulerAssignmentContent,
+    SchedulerAssignmentEvent,
+    TaskPublishEvent,
+)
 
 logger = get_logger(__name__)
 
@@ -124,6 +130,134 @@ class RequestHandler:
             self.stubs[node_id] = self.scheduler_manage.completion_handler.get_stub(node_id)
         return self.stubs[node_id]
 
+    def _publish_task_event(self, request_data: Dict) -> Optional[str]:
+        """Publish a CIP-09 dinf_task_publish event for this HTTP request (best-effort)."""
+        try:
+            pub = get_publisher()
+            if pub is None or self.scheduler_manage is None:
+                return
+            
+            # Derive a short human description from the last chat message if present.
+            description = "chat_completion"
+            messages = request_data.get("messages")
+            
+            # Calculate total message size for difficulty estimation
+            total_message_size = 0
+            if isinstance(messages, list) and messages:
+                for msg in messages:
+                    if isinstance(msg, dict) and "content" in msg:
+                        total_message_size += len(str(msg.get("content", "")))
+                
+                last_msg = messages[-1]
+                if isinstance(last_msg, dict) and "content" in last_msg:
+                    # Truncate to avoid excessively large content in the event
+                    description = str(last_msg.get("content", ""))[:256] or description
+                elif isinstance(last_msg, dict) and "description" in last_msg:
+                    description = str(last_msg.get("description", ""))[:256] or description
+            
+            # Determine difficulty based on total message size
+            if total_message_size < 500:
+                difficulty = "easy"
+            elif total_message_size < 2000:
+                difficulty = "medium"
+            else:
+                difficulty = "hard"
+
+            model_name = self.scheduler_manage.get_model_name() or "unknown"
+            num_layers = getattr(
+                getattr(self.scheduler_manage, "scheduler", None), "num_layers", 0
+            ) or 0
+
+            task_event = TaskPublishEvent.from_plaintext(
+                sid="prakasa-main",
+                description=description,
+                model_name=model_name,
+                num_layers=int(num_layers),
+                category="inference",
+                difficulty=difficulty,
+            )
+            logger.debug(f"_publish_task_event: publishing task event for model={model_name}")
+            pub.publish_event(task_event)
+            return task_event.id
+        except Exception as e:
+            # Nostr publishing errors are logged at debug level only.
+            logger.debug(f"Failed to publish dinf_task_publish event: {e}", exc_info=True)
+
+    def _publish_assignment_event(self, routing_table: list, request_id: str, task_event_id: Optional[str] = None):
+        """Publish a CIP-09 dinf_task_assign event for this inference request (best-effort)."""
+        try:
+            pub = get_publisher()
+            if pub is None:
+                logger.debug("_publish_assignment_event: publisher is None, skipping")
+                return
+            if self.scheduler_manage is None:
+                logger.debug("_publish_assignment_event: scheduler_manage is None, skipping")
+                return
+            if not routing_table:
+                logger.debug("_publish_assignment_event: routing_table is empty, skipping")
+                return
+            
+            scheduler = self.scheduler_manage.scheduler
+            if scheduler is None:
+                logger.debug("_publish_assignment_event: scheduler is None, skipping")
+                return
+            
+            model_info = scheduler.model_info
+            model_ref = ModelRef(
+                model_name=model_info.model_name,
+                num_layers=model_info.num_layers,
+                model_version=None,
+            )
+            
+            assignments = []
+            for node_id in routing_table:
+                node = scheduler.node_id_to_node.get(node_id)
+                if node is None:
+                    logger.debug(f"_publish_assignment_event: node {node_id} not found in scheduler")
+                    continue
+                
+                assignment = Assignment(
+                    worker_pubkey=node.account,
+                    node_id=node.node_id,
+                    account=node.account,
+                    start_layer=node.start_layer,
+                    end_layer=node.end_layer,
+                    tp_rank=0,
+                    tp_size=node.hardware.num_gpus,
+                    dp_rank=0,
+                    dp_size=1,
+                    max_concurrent_requests=node.max_requests,
+                    max_sequence_length=node.max_sequence_length,
+                    expected_work_units=None,
+                )
+                assignments.append(assignment)
+            
+            if not assignments:
+                logger.debug(f"_publish_assignment_event: no valid assignments for routing_table={routing_table}")
+                return
+            
+            content = SchedulerAssignmentContent(
+                assignments=assignments,
+                model=model_ref,
+                routing=routing_table,
+                deadline=None,
+            )
+            
+            # Build allocation_id from the routing path
+            allocation_id = f"{request_id}:{model_ref.model_name}:{'->'.join(routing_table)}"
+            
+            event = SchedulerAssignmentEvent.from_content(
+                sid="prakasa-main",
+                task_event_id=task_event_id,
+                allocation_id=allocation_id,
+                content=content,
+            )
+            logger.debug(f"_publish_assignment_event: publishing event for request_id={request_id}, allocation_id={allocation_id}")
+            pub.publish_event(event)
+        except Exception as e:
+            # Nostr errors must never affect request handling; log at debug only.
+            logger.debug(f"Failed to publish dinf_task_assign event: {e}", exc_info=True)
+
     async def _forward_request(self, request_data: Dict, request_id: str, received_ts: int):
         start_time = time.time()
         logger.debug(f"Forwarding request {request_id}; stream={request_data.get('stream', False)}")
@@ -180,37 +314,10 @@ class RequestHandler:
 
         # Optionally publish a CIP-09 dinf_task_publish event for this HTTP request.
         # This is best-effort and must not affect the main request handling flow.
-        try:
-            pub = get_publisher()
-            if pub is not None and self.scheduler_manage is not None:
-                # Derive a short human description from the last chat message if present.
-                description = "chat_completion"
-                messages = request_data.get("messages")
-                if isinstance(messages, list) and messages:
-                    last_msg = messages[-1]
-                    if isinstance(last_msg, dict) and "content" in last_msg:
-                        # Truncate to avoid excessively large content in the event
-                        description = str(last_msg.get("content", ""))[:256] or description
-                    elif isinstance(last_msg, dict) and "description" in last_msg:
-                        description = str(last_msg.get("description", ""))[:256] or description
-
-                model_name = self.scheduler_manage.get_model_name() or "unknown"
-                num_layers = getattr(
-                    getattr(self.scheduler_manage, "scheduler", None), "num_layers", 0
-                ) or 0
-
-                task_event = TaskPublishEvent.from_plaintext(
-                    sid="prakasa-main",
-                    description=description,
-                    model_name=model_name,
-                    num_layers=int(num_layers),
-                    category="inference",
-                    difficulty="medium",
-                )
-                pub.publish_event(task_event)
-        except Exception:
-            # Nostr publishing errors are logged at debug level only.
-            logger.debug("Failed to publish dinf_task_publish event", exc_info=True)
+        task_evt_id = self._publish_task_event(request_data)
+        
+        # Publish a CIP-09 dinf_task_assign event for the routing assignment.
+        self._publish_assignment_event(routing_table, request_id, task_evt_id)
 
         # Add request_id and routing_table to request_data
         request_data["rid"] = str(request_id)
