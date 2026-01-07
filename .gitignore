@@ -11,6 +11,8 @@ build/
 *.key
 .cache
 .vscode/
+.cursor/
 
 # Local config files
 config.yaml
+AGENTS.md

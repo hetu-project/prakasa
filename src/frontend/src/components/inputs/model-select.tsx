@@ -179,6 +179,16 @@ export const ModelSelect: FC<ModelSelectProps> = ({ variant = 'outlined', autoCo
         input={variant === 'outlined' ? <OutlinedInput /> : <InputBase />}
         value={configModelName}
         onChange={onChange}
+        MenuProps={{
+          PaperProps: {
+            sx: {
+              backgroundColor: 'rgba(10, 14, 39, 0.95)',
+              border: '1px solid rgba(0, 240, 255, 0.3)',
+              borderRadius: '12px',
+              backdropFilter: 'blur(10px)',
+            },
+          },
+        }}
         renderValue={(value: unknown) => {
           const model = modelInfoList.find((m) => m.name === value);
           if (!model) return value as string;

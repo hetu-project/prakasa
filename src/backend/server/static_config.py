@@ -87,9 +87,9 @@ MODELS = {
     # ======================================= End ========================================#
 }
 
-NODE_JOIN_COMMAND_LOCAL_NETWORK = """parallax join"""
+NODE_JOIN_COMMAND_LOCAL_NETWORK = """prakasa join"""
 
-NODE_JOIN_COMMAND_PUBLIC_NETWORK = """parallax join -s {scheduler_addr} """
+NODE_JOIN_COMMAND_PUBLIC_NETWORK = """prakasa join -s {scheduler_addr} """
 
 
 def get_model_info(model_name, use_hfcache: bool = False):

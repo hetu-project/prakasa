@@ -22,7 +22,7 @@ import {
 const ChatMarkdownRoot = styled('article', {
   name: 'MuiMarkdownRenderer',
   slot: 'Root',
-})<{ isThinking?: boolean }>(({ theme, isThinking }) => {
+})<{ isThinking?: boolean; fontSize?: number }>(({ theme, isThinking, fontSize }) => {
   const { palette, spacing, typography } = theme;
   const preStyles = {
     '& pre': {
@@ -34,6 +34,7 @@ const ChatMarkdownRoot = styled('article', {
     ...typography.body1,
     overflowWrap: 'break-word',
     maxWidth: '100%',
+    fontSize: fontSize ? `${fontSize}px` : 'inherit',
 
     display: 'flex',
     flexFlow: 'column nowrap',
@@ -57,6 +58,7 @@ const ChatMarkdownRoot = styled('article', {
 interface Props {
   isThinking?: boolean;
   content: string;
+  fontSize?: number;
 }
 
 const preprocessThink = (input: string) => {
@@ -102,12 +104,12 @@ const schema = {
   tagNames: (defaultSchema.tagNames || []).filter((tag) => !blockList.includes(tag)),
 };
 
-const ChatMarkdown = memo<Props>(({ isThinking, content }) => {
+const ChatMarkdown = memo<Props>(({ isThinking, content, fontSize }) => {
   content = preprocessThink(content);
   content = preprocessMath(content);
 
   return (
-    <ChatMarkdownRoot className='ChatMarkdown' isThinking={isThinking}>
+    <ChatMarkdownRoot className='ChatMarkdown' isThinking={isThinking} fontSize={fontSize}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex, rehypeRaw, [remarkGfm, remarkMath, rehypeSanitize, schema]]}

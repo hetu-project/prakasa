@@ -177,7 +177,7 @@ export const DrawerLayout: FC<PropsWithChildren> = ({ children }) => {
         <Typography variant='body1'>Scheduler restart</Typography>
         <Typography variant='body2' color='text.disabled'>
           We have noticed that your scheduler has been disconnected (this would be the computer that
-          ran the <strong>parallax run</strong> command). You would need to restart the scheduler,
+          ran the <strong>prakasa run</strong> command). You would need to restart the scheduler,
           reconfigure the cluster, and your chat will be back up again!
         </Typography>
       </>
@@ -249,7 +249,24 @@ export const DrawerLayout: FC<PropsWithChildren> = ({ children }) => {
         <Stack direction='row' sx={{ justifyContent: 'flex-end', alignItems: 'center', gap: 2 }}>
           {sidebarExpanded ?
             <>
-              <IconBrandGradient />
+              <Typography sx={{
+                fontSize: '1.5rem',
+                fontWeight: 700,
+                letterSpacing: '0.5px',
+                background: 'linear-gradient(135deg, #00F0FF 0%, #B026FF 50%, #00F0FF 100%)',
+                backgroundSize: '200% auto',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                animation: 'sidebarLightFlow 3s linear infinite',
+                '@keyframes sidebarLightFlow': {
+                  '0%': {
+                    backgroundPosition: '0% center',
+                  },
+                  '100%': {
+                    backgroundPosition: '200% center',
+                  },
+                },
+              }}>Prakasa</Typography>
               <Box sx={{ flex: 1 }} />
               <Tooltip
                 title='Collapse Sidebar'
@@ -297,7 +314,23 @@ export const DrawerLayout: FC<PropsWithChildren> = ({ children }) => {
                     opacity: 1,
                   }}
                 >
-                  <IconBrandGradient />
+                  <Typography sx={{
+                    fontSize: '1.5rem',
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, #00F0FF 0%, #B026FF 50%, #00F0FF 100%)',
+                    backgroundSize: '200% auto',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    animation: 'collapsedLightFlow 3s linear infinite',
+                    '@keyframes collapsedLightFlow': {
+                      '0%': {
+                        backgroundPosition: '0% center',
+                      },
+                      '100%': {
+                        backgroundPosition: '200% center',
+                      },
+                    },
+                  }}>P</Typography>
                 </Box>
 
                 <Tooltip
@@ -338,7 +371,8 @@ export const DrawerLayout: FC<PropsWithChildren> = ({ children }) => {
             </Stack>
             <NodeList variant='menu' sx={{ py: '2rem' }} />
             <Button
-              color='info'
+              color='primary'
+              variant='contained'
               startIcon={<IconPlus />}
               onClick={openJoinCommand}
               // onClick={openRebalancing}

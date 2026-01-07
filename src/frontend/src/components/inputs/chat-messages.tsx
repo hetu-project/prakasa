@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type FC, type UIEventHandler } from 'react';
 import { useChat, type ChatMessage } from '../../services';
-import { Box, Button, IconButton, Paper, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Button, IconButton, Paper, Stack, Tooltip, Typography, Slider } from '@mui/material';
 import { IconArrowDown, IconCopy, IconCopyCheck, IconRefresh } from '@tabler/icons-react';
 import { useRefCallback } from '../../hooks';
 import ChatMarkdown from './chat-markdown';
@@ -10,6 +10,7 @@ export const ChatMessages: FC = () => {
   const [{ status, messages }] = useChat();
 
   const refContainer = useRef<HTMLDivElement>(null);
+  const [fontSize, setFontSize] = useState(14);
   // const refBottom = useRef<HTMLDivElement>(null);
   const [isBottom, setIsBottom] = useState(true);
 
@@ -115,7 +116,7 @@ export const ChatMessages: FC = () => {
       }}
     >
       {messages.map((message, idx) => (
-        <ChatMessage key={message.id} message={message} isLast={idx === messages.length - 1} />
+        <ChatMessage key={message.id} message={message} isLast={idx === messages.length - 1} fontSize={fontSize} />
       ))}
 
       {status === 'opened' && <DotPulse size='large' />}
@@ -133,13 +134,44 @@ export const ChatMessages: FC = () => {
         overflow: 'hidden',
       }}
     >
+      <Stack 
+        direction="row" 
+        alignItems="center" 
+        gap={2} 
+        sx={{ 
+          px: 2, 
+          py: 0.5,
+          opacity: 0.7,
+          transition: 'opacity 0.2s ease',
+          '&:hover': { opacity: 1 },
+        }}
+      >
+        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: 'text.secondary', minWidth: 'fit-content' }}>
+          Font Size: {fontSize}px
+        </Typography>
+        <Slider
+          value={fontSize}
+          onChange={(_, value) => setFontSize(value as number)}
+          min={12}
+          max={20}
+          step={1}
+          size="small"
+          sx={{ 
+            width: 100,
+            '& .MuiSlider-thumb': {
+              width: 12,
+              height: 12,
+            },
+          }}
+        />
+      </Stack>
       {nodeStream}
       {nodeScrollToBottomButton}
     </Box>
   );
 };
 
-const ChatMessage: FC<{ message: ChatMessage; isLast?: boolean }> = memo(({ message, isLast }) => {
+const ChatMessage: FC<{ message: ChatMessage; isLast?: boolean; fontSize: number }> = memo(({ message, isLast, fontSize }) => {
   const { role, status: messageStatus, thinking, content } = message;
 
   const [, { generate }] = useChat();
@@ -171,14 +203,14 @@ const ChatMessage: FC<{ message: ChatMessage; isLast?: boolean }> = memo(({ mess
           py: 1.5,
           borderRadius: '0.5rem',
           backgroundColor: 'background.default',
-          fontSize: '0.875rem',
+          fontSize: `${fontSize}px`,
         }}
       >
         {content}
       </Typography>
     : <>
-        {thinking && <ChatMarkdown key='assistant-thinking' isThinking content={thinking} />}
-        {content && <ChatMarkdown key='assistant-message' content={content} />}
+        {thinking && <ChatMarkdown key='assistant-thinking' isThinking content={thinking} fontSize={fontSize} />}
+        {content && <ChatMarkdown key='assistant-message' content={content} fontSize={fontSize} />}
       </>;
 
   const assistantDone = messageStatus === 'done';

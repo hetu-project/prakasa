@@ -1,12 +1,12 @@
 import type { FC, PropsWithChildren, ReactNode } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Box, Link, Stack, styled, Typography } from '@mui/material';
-import { LogoGradient } from '../brand';
 import { useCluster } from '../../services';
 
 export interface MainLayoutProps {
   contentStart?: ReactNode;
   contentEnd?: ReactNode;
+  contentMaxWidth?: string | number;
 }
 
 const MainLayoutRoot = styled(Stack)(({ theme }) => {
@@ -56,6 +56,8 @@ const MainLayoutContent = styled(Stack)(({ theme }) => {
     gap: spacing(7),
     paddingInline: spacing(1),
     overflowY: 'auto',
+    position: 'relative',
+    zIndex: 1,
   };
 });
 
@@ -91,14 +93,35 @@ export const MainLayout: FC<PropsWithChildren<MainLayoutProps>> = ({
   children,
   contentStart,
   contentEnd = <DebugInfo />,
+  contentMaxWidth,
 }) => {
   return (
     <MainLayoutRoot>
       <MainLayoutHeader direction='row'>
-        <LogoGradient />
+        <Box sx={{ 
+          fontSize: '2.5rem', 
+          fontWeight: 700,
+          letterSpacing: '0.5px',
+          background: 'linear-gradient(135deg, #00F0FF 0%, #B026FF 50%, #00F0FF 100%)',
+          backgroundSize: '200% auto',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+          animation: 'headerLightFlow 3s linear infinite',
+          '@keyframes headerLightFlow': {
+            '0%': {
+              backgroundPosition: '0% center',
+            },
+            '100%': {
+              backgroundPosition: '200% center',
+            },
+          },
+        }}>
+          Prakasa
+        </Box>
       </MainLayoutHeader>
       <MainLayoutContainer>
-        <MainLayoutContent className='MainLayoutContent'>{children}</MainLayoutContent>
+        <MainLayoutContent className='MainLayoutContent' sx={contentMaxWidth ? { width: contentMaxWidth } : undefined}>{children}</MainLayoutContent>
         {(contentStart && <MainLayoutStart>{contentStart}</MainLayoutStart>) || undefined}
         {(contentEnd && <MainLayoutEnd>{contentEnd}</MainLayoutEnd>) || undefined}
       </MainLayoutContainer>

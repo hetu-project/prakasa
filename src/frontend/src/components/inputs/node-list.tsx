@@ -49,13 +49,20 @@ const List = styled(MuiList)<{ variant: NodeListVariant }>(({ theme, variant }) 
 });
 
 const ListItem = styled(MuiListItem)(({ theme }) => {
-  const { spacing } = theme;
+  const { spacing, palette } = theme;
   return {
     flex: 'none',
     gap: spacing(1),
     backgroundColor: 'transparent',
     padding: spacing(2),
     overflow: 'visible',
+    borderRadius: spacing(1.5),
+    transition: 'all 0.2s ease',
+    '&:hover': {
+      backgroundColor: palette.action.hover,
+      transform: 'translateY(-1px)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+    },
   };
 }) as typeof MuiListItem;
 
