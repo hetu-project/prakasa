@@ -24,8 +24,8 @@ run:
   nostr:
     # nsec-encoded Nostr private key; if null, a new one will be generated on first run
     privkey: null
-    # nsec-encoded Nostr public key; if null, a new one will be generated on first run
-    pukkey: null
+    # npub-encoded Nostr public key; if null, a new one will be generated on first run
+    pubkey: null
     # List of Nostr relay URLs used for publishing DINF events
     relays:
       - "wss://nostr.parallel.hetu.org:8443"
@@ -48,8 +48,8 @@ join:
   nostr:
     # nsec-encoded Nostr private key; if null, a new one will be generated on first join
     privkey: null
-    # nsec-encoded Nostr public key; if null, a new one will be generated on first run
-    pukkey: null
+    # npub-encoded Nostr public key; if null, a new one will be generated on first join
+    pubkey: null
     # List of Nostr relay URLs used for publishing DINF events
     relays:
       - "wss://nostr.parallel.hetu.org:8443"
@@ -64,6 +64,6 @@ chat:
   # Nostr configuration for chat client (optional, used if chat needs to emit DINF events)
   nostr:
     privkey: null
-    pukkey: null
+    pubkey: null
     relays:
       - "wss://nostr.parallel.hetu.org:8443"
