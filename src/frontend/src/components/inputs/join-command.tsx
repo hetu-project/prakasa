@@ -46,8 +46,35 @@ export const JoinCommand: FC = () => {
   }, [copiedKey]);
 
   const copy = useRefCallback(async (key: string) => {
-    await navigator.clipboard.writeText(nodeJoinCommand[key]);
-    setCopiedKey(key);
+    try {
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(nodeJoinCommand[key]);
+        setCopiedKey(key);
+        return;
+      }
+      
+      // Fallback for older browsers or non-HTTPS contexts
+      const textArea = document.createElement('textarea');
+      textArea.value = nodeJoinCommand[key];
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      
+      try {
+        document.execCommand('copy');
+        setCopiedKey(key);
+      } catch (err) {
+        console.error('Failed to copy text:', err);
+      } finally {
+        document.body.removeChild(textArea);
+      }
+    } catch (err) {
+      console.error('Clipboard operation failed:', err);
+    }
   });
 
   return (
