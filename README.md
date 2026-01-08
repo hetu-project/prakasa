@@ -1,10 +1,10 @@
 <div align="center">
   <h1>Prakasa — Decentralized P2P GPU Inference Network</h1>
+  <img src="docs/images/prakasa.png" width="720">
   <p style="font-size:1.05em; margin-top:6px;">Prakasa (Sanskrit: प्रकाश) — The decentralized "Light" of intelligence.</p>
   <p style="max-width:900px; margin:12px auto;">
     Prakasa is a decentralized, privacy-preserving P2P GPU inference middleware built on top of the open-source Parallax engine. It leverages the Nostr protocol for resilient, censorship-resistant orchestration and integrates the RIM economic system for trustless, real-time settlements and reputation.
   </p>
-
 
   [![license](https://img.shields.io/github/license/hetu-project/prakasa.svg)](https://github.com/hetu-project/prakasa/tree/main/LICENSE)
   [![issue resolution](https://img.shields.io/github/issues-closed-raw/hetu-project/prakasa)](https://github.com/hetu-project/prakasa/issues)
