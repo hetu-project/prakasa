@@ -170,9 +170,12 @@ class SchedulerAssignmentEvent(SubspaceOpEvent):
         if task_event_id:
             tags.append(["e", task_event_id])
 
-        # For quick indexing, also tag each worker pubkey
+        # For quick indexing, also tag each worker
+        # NOTE: worker_pubkey may be an account address (0x...), not a Nostr pubkey
+        # Only add 'p' tag if it's a valid 64-char hex Nostr pubkey
         for a in content.assignments:
-            if a.worker_pubkey:
+            if a.worker_pubkey and len(a.worker_pubkey) == 64 and a.worker_pubkey.isalnum():
+                # Valid Nostr pubkey format (64 hex chars)
                 tags.append(["p", a.worker_pubkey])
             if a.account:
                 tags.append(["account", a.account])

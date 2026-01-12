@@ -14,6 +14,7 @@ from prakasa_nostr import get_publisher
 from prakasa_nostr.events import (
     Assignment,
     ModelRef,
+    RoutingInfo,
     SchedulerAssignmentContent,
     SchedulerAssignmentEvent,
     TaskPublishEvent,
@@ -236,15 +237,20 @@ class RequestHandler:
                 logger.debug(f"_publish_assignment_event: no valid assignments for routing_table={routing_table}")
                 return
             
+            # Build allocation_id and routing info from the routing path
+            allocation_id = f"{request_id}:{model_ref.model_name}:{':'.join(routing_table)}"
+            
+            routing_info = RoutingInfo(
+                pipeline_id=allocation_id,  # Use allocation_id as pipeline_id
+                node_path=routing_table,
+            )
+            
             content = SchedulerAssignmentContent(
                 assignments=assignments,
                 model=model_ref,
-                routing=routing_table,
+                routing=routing_info,
                 deadline=None,
             )
-            
-            # Build allocation_id from the routing path
-            allocation_id = f"{request_id}:{model_ref.model_name}:{'->'.join(routing_table)}"
             
             event = SchedulerAssignmentEvent.from_content(
                 sid="prakasa-main",
