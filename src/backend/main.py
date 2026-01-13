@@ -30,6 +30,7 @@ from pynostr.base_relay import RelayPolicy
 from pynostr.message_pool import MessagePool
 import tornado.ioloop
 import time
+import logging
 import threading
 from parallax_utils.ascii_anime import display_parallax_run
 from parallax_utils.file_util import get_project_root
@@ -37,6 +38,13 @@ from parallax_utils.logging_config import get_logger, set_log_level
 from parallax_utils.version_check import check_latest_release
 
 logger = get_logger(__name__)
+
+# Set up logging to see debug messages
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
 
 scheduler_manage = None
 request_handler = RequestHandler()
@@ -262,7 +270,8 @@ async def process_nostr_events(target_model_name: str):
                 continue
 
             kind = getattr(event, "kind", None)
-            print(f"[Nostr] Received event: kind={kind}, id={getattr(event, 'id', 'unknown')[:8]}...")
+            current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            print(f"[Nostr] [{current_time}] Received event: kind={kind}, id={getattr(event, 'id', 'unknown')[:8]}...")
             
             # --- Handle Kind 4 (Invite / Group Key Distribution) ---
             if kind == INVITE_KIND:
@@ -317,7 +326,7 @@ async def process_nostr_events(target_model_name: str):
                     received_ts = time.time()
                     request_data = {
                         "model": model_tag,
-                        "messages": [{"role": "user", "content": user_text}, {"description": "Nostr AI Agents Encrypted Group Chat"}],
+                        "messages": [{"role": "user", "content": user_text, "description": "Nostr AI Agents Encrypted Group Chat"}],
                         "stream": True, 
                         "extra_body": {
                             "group_id": group_id,

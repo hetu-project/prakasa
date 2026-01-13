@@ -153,7 +153,7 @@ class RequestHandler:
                 if isinstance(last_msg, dict) and "content" in last_msg:
                     # Truncate to avoid excessively large content in the event
                     description = str(last_msg.get("content", ""))[:256] or description
-                elif isinstance(last_msg, dict) and "description" in last_msg:
+                if isinstance(last_msg, dict) and "description" in last_msg:
                     description = str(last_msg.get("description", ""))[:256] or description
             
             # Determine difficulty based on total message size
