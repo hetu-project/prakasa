@@ -250,6 +250,8 @@ def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10, max_page
 
 async def process_nostr_events(target_model_name: str):
     """Async loop to process Nostr events for this scheduler/agent."""
+    import asyncio  # Ensure asyncio is accessible in this scope
+    
     pub = get_publisher()
     if pub is None:
         return

@@ -610,11 +610,12 @@ class HTTPHandler:
                 agent_avatar=request_info.agent_avatar
             )
             encrypted_content = GroupV1Crypto.encrypt(payload, request_info.group_key)
-            event_tags = [["g", request_info.group_id]]
+            
+            # Build additional tags (don't include 'g' tag, it will be added by from_encrypted_content)
+            event_tags = []
             if request_info.reply_to_event_id:
                 event_tags.append(["e", request_info.reply_to_event_id, "", "reply"])
             
-
             if request_info.user_pubkey:
                 event_tags.append(["p", request_info.user_pubkey])
             
