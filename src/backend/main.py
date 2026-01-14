@@ -618,6 +618,10 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Failed to initialize Nostr publisher (scheduler): {e}")
 
+    # Set p2p_usage_api_url early, before any requests can be processed
+    if getattr(args, "p2p_usage_api_url", None):
+        request_handler.set_p2p_usage_api_url(args.p2p_usage_api_url)
+    
     scheduler_manage = SchedulerManage(
         initial_peers=args.initial_peers,
         relay_servers=args.relay_servers,
@@ -635,9 +639,6 @@ if __name__ == "__main__":
     )
 
     request_handler.set_scheduler_manage(scheduler_manage)
-
-    if getattr(args, "p2p_usage_api_url", None):
-        request_handler.set_p2p_usage_api_url(args.p2p_usage_api_url)
 
     model_name = args.model_name
     init_nodes_num = args.init_nodes_num

@@ -99,6 +99,9 @@ class RequestHandler:
             workers: List of worker information (dict with 'node_id' and 'account')
             api_key: Optional API key
         """
+        logger.info(f"Report P2P usage for address {address}, model {model_name}, "
+                    f"input_tokens {input_tokens}, output_tokens {output_tokens}, workers {workers}")
+
         if not self.p2p_usage_api_url:
             logger.debug("P2P usage API URL not configured, skipping usage log")
             return

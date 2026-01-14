@@ -258,6 +258,8 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 setattr(args, "nostr_privkey", nostr_conf.get("privkey"))
             if not _cli_flag_provided(["--nostr-relay"]) and "relays" in nostr_conf:
                 setattr(args, "nostr_relays", nostr_conf.get("relays") or [])
+            if not _cli_flag_provided(["--p2p-usage-api-url"]) and "p2p_usage_api_url" in cmd_conf:
+                setattr(args, "p2p_usage_api_url", cmd_conf.get("p2p_usage_api_url"))
 
             # passthrough: e.g., --port
             if "port" in cmd_conf and not _flag_present(passthrough_args, ["--port"]):
@@ -271,6 +273,12 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
             ):
                 passthrough_args = passthrough_args or []
                 passthrough_args.extend(["--host", str(cmd_conf.get("host"))])
+            # passthrough: P2P usage API URL
+            if "p2p_usage_api_url" in cmd_conf and not _flag_present(passthrough_args, ["--p2p-usage-api-url"]):
+                p2p_api_url = cmd_conf.get("p2p_usage_api_url")
+                if p2p_api_url:  # Only add if not null
+                    passthrough_args = passthrough_args or []
+                    passthrough_args.extend(["--p2p-usage-api-url", str(p2p_api_url)])
 
         # join command options
         if args.command == "join":
