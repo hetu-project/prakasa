@@ -334,6 +334,10 @@ async def process_nostr_events(target_model_name: str):
 
                     evm_address = next((t[1] for t in tags if t[0] == "evm_address"), None)
 
+                    # Extract agent_name and agent_avatar from user's payload
+                    user_agent_name = payload.get("agent_name")
+                    user_agent_avatar = payload.get("agent_avatar")
+
                     print(f"Processing chat request from Nostr: {user_text[:50]}...")
                     request_id = str(uuid.uuid4())
                     received_ts = time.time()
@@ -346,9 +350,11 @@ async def process_nostr_events(target_model_name: str):
                             "group_key": shared_key,
                             "reply_to_event_id": event.id,
                             "user_pubkey": event.pubkey,
-                            "agent_name": target_model_name,
+                            "agent_name": user_agent_name or target_model_name,
+                            "agent_avatar": user_agent_avatar,
                         }
                     }
+                    print(f"Request data: {request_data}")
                     # Add evm_address to extra_body if present
                     if evm_address:
                         request_data["extra_body"]["evm_address"] = evm_address
