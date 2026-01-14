@@ -278,6 +278,14 @@ async def process_nostr_events(target_model_name: str):
             # --- Handle Kind 4 (Invite / Group Key Distribution) ---
             if kind == INVITE_KIND:
                 try:
+                    tags = getattr(event, "tags", [])
+                    p_tags = [t[1] for t in tags if len(t) > 1 and t[0] == "p"]
+                    our_pubkey = pub._private_key.public_key.hex()
+                    
+                    if our_pubkey not in p_tags:
+                        #print(f"Received invite for group {group_id} but it's not for us")
+                        continue
+                    
                     priv_key = pub._private_key
                     shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
                     content = Nip04Crypto.decrypt(event.content, shared_secret)
@@ -304,15 +312,18 @@ async def process_nostr_events(target_model_name: str):
                 tags = getattr(event, "tags", [])
                 model_tag = next((t[1] for t in tags if t[0] == "model"), None)
                 if model_tag != target_model_name:
+                    #print(f"Received chat request for model {model_tag} but it's not for us")
                     continue
 
                 try:
                     group_id = next((t[1] for t in tags if t[0] == "d"), None)
                     if not group_id:
+                        #print(f"Received chat request for group {group_id} but it's not for us")
                         continue
 
                     shared_key = group_key_manager.get_key(group_id)
                     if not shared_key:
+                        #print(f"Received chat request for group {group_id} but it doesn't have a shared key")
                         continue
 
                     payload = GroupV1Crypto.decrypt(event.content, shared_key)

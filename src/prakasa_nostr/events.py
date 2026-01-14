@@ -386,7 +386,7 @@ class ChatEvent(Event):
         """
         event_tags: List[List[str]] = []
         if group_id:
-            event_tags.append(["g", group_id])
+            event_tags.append(["d", group_id])
         if tags:
             event_tags.extend(tags)
 

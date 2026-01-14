@@ -628,7 +628,7 @@ class HTTPHandler:
             chat_event = ChatEvent.from_encrypted_content(
                 encrypted_content=encrypted_content,
                 group_id=request_info.group_id,
-                tags=event_tags
+                tags=event_tags if event_tags else None
             )
             pub.publish_event(chat_event)
             logger.debug(
