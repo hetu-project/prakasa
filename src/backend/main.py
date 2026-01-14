@@ -51,6 +51,9 @@ request_handler = RequestHandler()
 
 # Global variable to store Nostr startup task info
 _nostr_startup_info = None
+# Global variables to store agent name and avatar from config
+_default_agent_name = None
+_default_agent_avatar = None
 
 
 @asynccontextmanager
@@ -341,6 +344,11 @@ async def process_nostr_events(target_model_name: str):
                     print(f"Processing chat request from Nostr: {user_text[:50]}...")
                     request_id = str(uuid.uuid4())
                     received_ts = time.time()
+                    
+                    # Use user's agent_name/avatar if provided, otherwise use config defaults, otherwise use model name
+                    final_agent_name = user_agent_name or _default_agent_name or target_model_name
+                    final_agent_avatar = user_agent_avatar or _default_agent_avatar
+                    
                     request_data = {
                         "model": model_tag,
                         "messages": [{"role": "user", "content": user_text, "description": "Nostr AI Agents Encrypted Group Chat"}],
@@ -350,8 +358,8 @@ async def process_nostr_events(target_model_name: str):
                             "group_key": shared_key,
                             "reply_to_event_id": event.id,
                             "user_pubkey": event.pubkey,
-                            "agent_name": user_agent_name or target_model_name,
-                            "agent_avatar": user_agent_avatar,
+                            "agent_name": final_agent_name,
+                            "agent_avatar": final_agent_avatar,
                         }
                     }
                     print(f"Request data: {request_data}")
@@ -612,6 +620,11 @@ if __name__ == "__main__":
             )
             # Set global variable for lifespan to use
             _nostr_startup_info = args.model_name
+            
+            # Store agent_name and agent_avatar from config for use in Kind 42 event processing
+            global _default_agent_name, _default_agent_avatar
+            _default_agent_name = getattr(args, "agent_name", None)
+            _default_agent_avatar = getattr(args, "agent_avatar", None)
             
             # Restore group keys from relay history after initialization
             pub = get_publisher()

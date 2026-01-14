@@ -71,6 +71,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="P2P usage API base URL for logging token usage",
     )
+    parser.add_argument(
+        "--agent-name",
+        type=str,
+        default=None,
+        help="Agent name for Kind 42 chat events (default from config or model name)",
+    )
+    parser.add_argument(
+        "--agent-avatar",
+        type=str,
+        default=None,
+        help="Agent avatar URL for Kind 42 chat events",
+    )
 
     args = parser.parse_args()
 

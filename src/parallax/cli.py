@@ -260,6 +260,10 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 setattr(args, "nostr_relays", nostr_conf.get("relays") or [])
             if not _cli_flag_provided(["--p2p-usage-api-url"]) and "p2p_usage_api_url" in cmd_conf:
                 setattr(args, "p2p_usage_api_url", cmd_conf.get("p2p_usage_api_url"))
+            if not _cli_flag_provided(["--agent-name"]) and "agent_name" in cmd_conf:
+                setattr(args, "agent_name", cmd_conf.get("agent_name"))
+            if not _cli_flag_provided(["--agent-avatar"]) and "agent_avatar" in cmd_conf:
+                setattr(args, "agent_avatar", cmd_conf.get("agent_avatar"))
 
             # passthrough: e.g., --port
             if "port" in cmd_conf and not _flag_present(passthrough_args, ["--port"]):
