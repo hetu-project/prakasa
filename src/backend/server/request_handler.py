@@ -307,8 +307,6 @@ class RequestHandler:
             attempts += 1
             if attempts < self.MAX_ROUTING_RETRY:
                 # small async delay before re-forwarding
-                import asyncio
-
                 await asyncio.sleep(self.RETRY_DELAY_SEC)
 
         # If still empty after retries, return 429 Too Many Requests
