@@ -123,7 +123,8 @@ class PayloadBuilder:
         model: str = "", 
         agent_name: str = "",
         reply_to: Optional[str] = None,
-        agent_avatar: Optional[str] = None
+        agent_avatar: Optional[str] = None,
+        is_streaming: bool = False
     ) -> dict:
         """
         Build chat message payload for Kind 42 encryption.
@@ -134,11 +135,20 @@ class PayloadBuilder:
             agent_name: Agent name
             reply_to: Optional event ID of the message being replied to
             agent_avatar: Optional agent avatar URL or identifier
+            is_streaming: Whether this is a streaming chunk (True) or final message (False)
         """
-        payload = {
-            "text": text,
-            "type": "text"
-        }
+        if is_streaming:
+            payload = {
+                "text": text,
+                "type": "text_chunk",
+                "is_streaming": True
+            }
+        else:
+            payload = {
+                "text": text,
+                "type": "text",
+                "is_streaming": False
+            }
         if model:
             payload["model"] = model
         if agent_name:

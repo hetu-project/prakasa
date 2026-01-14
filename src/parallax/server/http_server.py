@@ -593,8 +593,14 @@ class HTTPHandler:
         if not NOSTR_AVAILABLE:
             return
         
-        if not request_info.accumulated_text:
-            return
+        if is_final:
+            text_to_publish = request_info.text
+            if not text_to_publish:
+                return
+        else:
+            text_to_publish = request_info.accumulated_text
+            if not text_to_publish:
+                return
         
         try:
             pub = get_publisher()
@@ -603,11 +609,12 @@ class HTTPHandler:
                 return
             
             payload = PayloadBuilder.build_chat_message(
-                text=request_info.accumulated_text,
+                text=text_to_publish,
                 model=request_info.model,
                 agent_name=request_info.agent_name or "prakasa-agent",
                 reply_to=request_info.reply_to_event_id,
-                agent_avatar=request_info.agent_avatar
+                agent_avatar=request_info.agent_avatar,
+                is_streaming=not is_final
             )
             encrypted_content = GroupV1Crypto.encrypt(payload, request_info.group_key)
             
@@ -633,9 +640,10 @@ class HTTPHandler:
             pub.publish_event(chat_event)
             logger.debug(
                 f"Published chat chunk for request {rid} (group_id={request_info.group_id[:8]}..., "
-                f"length={len(request_info.accumulated_text)}, is_final={is_final})"
+                f"length={len(text_to_publish)}, is_final={is_final}, is_streaming={not is_final})"
             )
-            request_info.accumulated_text = ""
+            if not is_final:
+                request_info.accumulated_text = ""
             
         except Exception as e:
             logger.error(f"Error publishing chat chunk for request {rid}: {e}", exc_info=True)
