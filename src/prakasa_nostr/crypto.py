@@ -124,7 +124,12 @@ class PayloadBuilder:
         agent_name: str = "",
         reply_to: Optional[str] = None,
         agent_avatar: Optional[str] = None,
-        is_streaming: bool = False
+        is_streaming: bool = False,
+        current_target: Optional[str] = None,
+        remaining_chain: Optional[list] = None,
+        is_relay_message: Optional[bool] = None,
+        history_ids: Optional[list] = None,
+        status: Optional[str] = None,
     ) -> dict:
         """
         Build chat message payload for Kind 42 encryption.
@@ -136,6 +141,11 @@ class PayloadBuilder:
             reply_to: Optional event ID of the message being replied to
             agent_avatar: Optional agent avatar URL or identifier
             is_streaming: Whether this is a streaming chunk (True) or final message (False)
+            current_target: Optional pubkey of the next agent
+            remaining_chain: Optional list of remaining agents
+            is_relay_message: Optional relay flag
+            history_ids: Optional list of history event IDs
+            status: Optional orchestration status
         """
         if is_streaming:
             payload = {
@@ -157,6 +167,16 @@ class PayloadBuilder:
             payload["reply_to"] = reply_to
         if agent_avatar:
             payload["agent_avatar"] = agent_avatar
+        if current_target is not None:
+            payload["current_target"] = current_target
+        if remaining_chain is not None:
+            payload["remaining_chain"] = remaining_chain
+        if is_relay_message is not None:
+            payload["is_relay_message"] = is_relay_message
+        if history_ids is not None:
+            payload["history_ids"] = history_ids
+        if status is not None:
+            payload["status"] = status
         return payload
 
 # ==========================================

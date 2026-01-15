@@ -1,10 +1,12 @@
 import asyncio
 import json
+import os
 import time
 import traceback
 import uuid
 import queue
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Dict, Optional
 
 import uvicorn
@@ -24,6 +26,7 @@ from backend.server.static_config import (
 from prakasa_nostr import init_global_publisher, get_publisher
 from prakasa_nostr.events import INVITE_KIND, CHAT_KIND, REASONING_KIND
 from prakasa_nostr.crypto import GroupV1Crypto, Nip04Crypto
+from pynostr.key import PrivateKey
 from pynostr.filters import Filters, FiltersList
 from pynostr.relay import Relay
 from pynostr.base_relay import RelayPolicy
@@ -31,6 +34,7 @@ from pynostr.message_pool import MessagePool
 import tornado.ioloop
 import time
 import logging
+import requests
 import threading
 from parallax_utils.ascii_anime import display_parallax_run
 from parallax_utils.file_util import get_project_root
@@ -51,9 +55,143 @@ request_handler = RequestHandler()
 
 # Global variable to store Nostr startup task info
 _nostr_startup_info = None
-# Global variables to store agent name and avatar from config
-_default_agent_name = None
-_default_agent_avatar = None
+# Global cache for NPC info from P2P explore API
+_npc_cache_by_pubkey: Dict[str, Dict] = {}
+_restore_state = {
+    "last_seen_ts": None,
+    "processed_event_ids": set(),
+}
+_MAX_PROCESSED_EVENT_IDS = 5000
+_RESTORE_OVERLAP_SECONDS = 30 * 60
+
+
+def _get_cache_paths() -> Dict[str, Path]:
+    cache_dir = os.environ.get("PRAKASA_CACHE_DIR")
+    if cache_dir:
+        base = Path(cache_dir).expanduser()
+    else:
+        base = get_project_root() / ".cache"
+    base.mkdir(parents=True, exist_ok=True)
+    return {
+        "group_keys": base / "group_keys_cache.json",
+    }
+
+
+def _load_persistent_cache() -> None:
+    """Load group keys and invite restore state from disk."""
+    global _restore_state
+    paths = _get_cache_paths()
+    cache_file = paths["group_keys"]
+    if not cache_file.exists():
+        return
+    try:
+        data = json.loads(cache_file.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            keys = data.get("group_keys", {})
+            if isinstance(keys, dict):
+                for gid, key in keys.items():
+                    if gid and key:
+                        group_key_manager.add_key(gid, key)
+            last_seen_ts = data.get("last_seen_ts")
+            if isinstance(last_seen_ts, int):
+                _restore_state["last_seen_ts"] = last_seen_ts
+            processed = data.get("processed_event_ids", [])
+            if isinstance(processed, list):
+                _restore_state["processed_event_ids"] = set(
+                    [pid for pid in processed if isinstance(pid, str)]
+                )
+    except Exception as e:
+        print(f"Failed to load group keys cache from {cache_file}: {e}")
+
+
+def _save_persistent_cache() -> None:
+    """Persist group keys and invite restore state to disk."""
+    paths = _get_cache_paths()
+    cache_file = paths["group_keys"]
+    try:
+        processed_ids = list(_restore_state.get("processed_event_ids", set()))
+        if len(processed_ids) > _MAX_PROCESSED_EVENT_IDS:
+            processed_ids = processed_ids[-_MAX_PROCESSED_EVENT_IDS :]
+        payload = {
+            "group_keys": dict(group_key_manager._keys),
+            "last_seen_ts": _restore_state.get("last_seen_ts"),
+            "processed_event_ids": processed_ids,
+        }
+        cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        print(f"Failed to save group keys cache to {cache_file}: {e}")
+
+
+def _get_npc_private_key(pubkey: str) -> Optional[PrivateKey]:
+    npc = _npc_cache_by_pubkey.get(pubkey)
+    if not npc:
+        return None
+    cached = npc.get("_privkey_obj")
+    if cached is not None:
+        return cached
+
+    private_key = npc.get("private_key")
+    if not private_key:
+        return None
+
+    try:
+        if isinstance(private_key, str) and private_key.startswith("nsec"):
+            pk = PrivateKey.from_nsec(private_key)
+        else:
+            try:
+                pk = PrivateKey.from_hex(private_key)
+            except Exception:
+                pk = PrivateKey(bytes.fromhex(private_key))
+        npc["_privkey_obj"] = pk
+        return pk
+    except Exception as e:
+        print(f"Failed to parse NPC private key for pubkey {pubkey[:8]}...: {e}")
+        return None
+
+
+def _record_invite_event(event_id: Optional[str], created_at: Optional[int]) -> None:
+    if event_id:
+        _restore_state["processed_event_ids"].add(event_id)
+    if isinstance(created_at, int):
+        prev = _restore_state.get("last_seen_ts")
+        if prev is None or created_at > prev:
+            _restore_state["last_seen_ts"] = created_at
+
+
+def _store_group_key(group_id: str, key: str) -> None:
+    group_key_manager.add_key(group_id, key)
+    _save_persistent_cache()
+
+
+def _load_npc_cache(p2p_usage_api_url: Optional[str]) -> None:
+    """Load NPC info from external P2P explore API into memory."""
+    global _npc_cache_by_pubkey
+    if not p2p_usage_api_url:
+        print("p2p_usage_api_url not set; skipping NPC cache load")
+        _npc_cache_by_pubkey = {}
+        return
+
+    url = f"{p2p_usage_api_url.rstrip('/')}/api/v1/chat/p2p/explore"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        items = data.get("items", []) if isinstance(data, dict) else []
+        cache: Dict[str, Dict] = {}
+        for item in items:
+            pubkey = item.get("public_key")
+            if pubkey:
+                cache[pubkey] = {
+                    "name": item.get("name"),
+                    "icon": item.get("icon"),
+                    "public_key": pubkey,
+                    "private_key": item.get("private_key"),
+                }
+        _npc_cache_by_pubkey = cache
+        print(f"Loaded {len(_npc_cache_by_pubkey)} NPC entries from P2P explore API")
+    except Exception as e:
+        print(f"Failed to load NPC cache from {url}: {e}")
+        _npc_cache_by_pubkey = {}
 
 
 @asynccontextmanager
@@ -92,47 +230,47 @@ class GroupKeyManager:
 group_key_manager = GroupKeyManager()
 
 
-def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10, max_pages: int = 10):
-    """Restore group keys from historical Kind 4 events on relays (synchronous).
-    
-    Uses pagination to query historical events in batches, going backwards in time.
-    This ensures we can retrieve keys even if there are many events on the relay.
-    
-    Args:
-        pub: Nostr publisher instance
-        relays: List of relay URLs
-        timeout: Timeout per relay connection (seconds)
-        max_pages: Maximum number of pages to query (each page = 1000 events)
-    """
-    if not pub or not relays:
+def restore_group_keys_from_relay_for_npcs(
+    relays: list, timeout: int = 10, max_pages: Optional[int] = None
+):
+    """Restore group keys from historical Kind 4 events for all NPC accounts."""
+    if not relays or not _npc_cache_by_pubkey:
         return
-    
+
     try:
-        priv_key = pub._private_key
-        our_pubkey = priv_key.public_key.hex()
-        print(f"Restoring group keys from relays (our pubkey: {our_pubkey[:16]}...)...")
-        
+        npc_pubkeys = set(_npc_cache_by_pubkey.keys())
+        print(f"Restoring group keys for {len(npc_pubkeys)} NPCs from relays...")
+
         current_time = int(time.time())
-        page_size = 1000  
-        days_per_page = 30  
+        page_size = 1000
+        days_per_page = 30
         seconds_per_page = days_per_page * 24 * 3600
         restored_count = 0
         total_events_received = 0
-        
-        for page in range(max_pages):
+        page = 0
+        last_seen_ts = _restore_state.get("last_seen_ts")
+        incremental_mode = isinstance(last_seen_ts, int)
+
+        while True:
+            if max_pages is not None and page >= max_pages:
+                break
             if page == 0:
                 until_time = current_time
-                since_time = current_time - seconds_per_page
+                if incremental_mode:
+                    since_time = max(0, last_seen_ts - _RESTORE_OVERLAP_SECONDS)
+                else:
+                    since_time = current_time - seconds_per_page
             else:
-                until_time = since_time  
-                since_time = until_time - seconds_per_page  
-            
-            print(f"Querying page {page + 1}/{max_pages} (since={since_time}, until={until_time})...")
-            
+                until_time = since_time
+                since_time = until_time - seconds_per_page
+
+            max_pages_label = "∞" if max_pages is None else str(max_pages)
+            print(f"Querying page {page + 1}/{max_pages_label} (since={since_time}, until={until_time})...")
+
             message_pool = MessagePool(first_response_only=False)
             policy = RelayPolicy()
             relay_connections = []
-            
+
             filters = FiltersList([
                 Filters(
                     kinds=[INVITE_KIND],
@@ -142,7 +280,7 @@ def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10, max_page
                 )
             ])
             subscription_id = uuid.uuid4().hex
-        
+
             for relay_url in relays:
                 try:
                     io_loop = tornado.ioloop.IOLoop()
@@ -158,17 +296,17 @@ def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10, max_page
                     relay_connections.append((relay, io_loop))
                 except Exception as e:
                     print(f"Failed to create relay connection for {relay_url}: {e}")
-            
+
             if not relay_connections:
                 if page == 0:
                     print("No relay connections available for key restore")
                     return
                 else:
                     break
-            
+
             events_received = []
             start_time = time.time()
-            
+
             def collect_events():
                 """Collect events from message pool."""
                 while time.time() - start_time < timeout:
@@ -181,7 +319,6 @@ def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10, max_page
                         message_pool.get_eose_notice()
                         break
                     time.sleep(0.1)
-            
 
             for relay, io_loop in relay_connections:
                 try:
@@ -196,57 +333,70 @@ def restore_group_keys_from_relay(pub, relays: list, timeout: int = 10, max_page
                         relay.close()
                     except Exception:
                         pass
-            
+
             if len(events_received) == 0:
                 print(f"No events found in this time range, stopping pagination")
                 break
-            
+
             print(f"  Received {len(events_received)} events in this page")
             total_events_received += len(events_received)
-            
+
             page_restored = 0
             for event in events_received:
                 try:
+                    event_id = getattr(event, "id", None)
+                    if event_id and event_id in _restore_state["processed_event_ids"]:
+                        continue
+
                     tags = getattr(event, "tags", [])
                     p_tags = [t[1] for t in tags if len(t) > 1 and t[0] == "p"]
-                    # Filter events: only process events where our pubkey is in the p tags
-                    if our_pubkey not in p_tags:
-                        continue
-                    
-                    shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
-                    content = Nip04Crypto.decrypt(event.content, shared_secret)
-                    content = content.strip()
-                    
-                    try:
-                        data = json.loads(content)
-                        if data.get("type") == "invite":
-                            group_id = data.get("group_id")
-                            key = data.get("key")
-                            if group_id and key:
-                                if group_key_manager.get_key(group_id) is None:
-                                    group_key_manager.add_key(group_id, key)
-                                    restored_count += 1
-                                    page_restored += 1
-                                    print(f"  ✓ Restored key for group {group_id}")
-
-
-                    except json.JSONDecodeError:
+                    matching_pubkeys = [p for p in p_tags if p in npc_pubkeys]
+                    if not matching_pubkeys:
                         continue
 
+                    for recipient_pubkey in matching_pubkeys:
+                        priv_key = _get_npc_private_key(recipient_pubkey)
+                        if not priv_key:
+                            continue
+
+                        try:
+                            shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
+                            content = Nip04Crypto.decrypt(event.content, shared_secret)
+                            content = content.strip()
+                        except Exception:
+                            continue
+
+                        try:
+                            data = json.loads(content)
+                            if data.get("type") == "invite":
+                                group_id = data.get("group_id")
+                                key = data.get("key")
+                                if group_id and key:
+                                    if group_key_manager.get_key(group_id) is None:
+                                        _store_group_key(group_id, key)
+                                        restored_count += 1
+                                        page_restored += 1
+                                        print(f"  ✓ Restored key for group {group_id}")
+                                    _record_invite_event(event_id, getattr(event, "created_at", None))
+                                    break
+                        except json.JSONDecodeError:
+                            continue
                 except Exception as e:
                     print(f"Failed to restore key from event {event.id[:8] if hasattr(event, 'id') else 'unknown'}...: {e}")
                     continue
-            
+
             if page_restored > 0:
                 print(f"  Restored {page_restored} key(s) from this page")
-            
 
             if len(events_received) < page_size:
                 print(f"Reached end of available events (got {len(events_received)} < {page_size})")
                 break
-        
+            page += 1
+            if incremental_mode:
+                break
+
         print(f"Restored {restored_count} group key(s) from relay history (queried {total_events_received} total events)")
-            
+
     except Exception as e:
         print(f"Failed to restore group keys from relay: {e}")
 
@@ -283,23 +433,36 @@ async def process_nostr_events(target_model_name: str):
                 try:
                     tags = getattr(event, "tags", [])
                     p_tags = [t[1] for t in tags if len(t) > 1 and t[0] == "p"]
-                    our_pubkey = pub._private_key.public_key.hex()
-                    
-                    if our_pubkey not in p_tags:
-                        #print(f"Received invite for group {group_id} but it's not for us")
+                    matching_pubkeys = [p for p in p_tags if p in _npc_cache_by_pubkey]
+                    if not matching_pubkeys:
                         continue
-                    
-                    priv_key = pub._private_key
-                    shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
-                    content = Nip04Crypto.decrypt(event.content, shared_secret)
-                    content = content.strip()
+
+                    event_id = getattr(event, "id", None)
+                    if event_id and event_id in _restore_state["processed_event_ids"]:
+                        continue
+
+                    content = None
+                    for recipient_pubkey in matching_pubkeys:
+                        priv_key = _get_npc_private_key(recipient_pubkey)
+                        if not priv_key:
+                            continue
+                        shared_secret = priv_key.compute_shared_secret(event.pubkey).hex()
+                        try:
+                            content = Nip04Crypto.decrypt(event.content, shared_secret)
+                            content = content.strip()
+                            break
+                        except Exception:
+                            continue
+                    if not content:
+                        continue
                     try:
                         data = json.loads(content)
                         if data.get("type") == "invite":
                             group_id = data.get("group_id")
                             key = data.get("key")
                             if group_id and key:
-                                group_key_manager.add_key(group_id, key)
+                                _store_group_key(group_id, key)
+                                _record_invite_event(event_id, getattr(event, "created_at", None))
                                 print(f"Received invite for group {group_id}")
                         else:
                             print(f"Kind 4 event {event.id[:8]}... is not an invite (type: {data.get('type', 'unknown')})")
@@ -315,39 +478,60 @@ async def process_nostr_events(target_model_name: str):
                 tags = getattr(event, "tags", [])
                 model_tag = next((t[1] for t in tags if t[0] == "model"), None)
                 if model_tag != target_model_name:
-                    #print(f"Received chat request for model {model_tag} but it's not for us")
+                    print(f"Received chat request for model {model_tag} but it's not for us")
                     continue
 
                 try:
                     group_id = next((t[1] for t in tags if t[0] == "d"), None)
                     if not group_id:
-                        #print(f"Received chat request for group {group_id} but it's not for us")
+                        print(f"Received chat request for group {group_id} but it's not for us")
                         continue
 
                     shared_key = group_key_manager.get_key(group_id)
                     if not shared_key:
-                        #print(f"Received chat request for group {group_id} but it doesn't have a shared key")
+                        print(f"Received chat request for group {group_id} but it doesn't have a shared key")
                         continue
 
                     payload = GroupV1Crypto.decrypt(event.content, shared_key)
                     user_text = payload.get("text", "")
                     
                     if not user_text:
+                        print(f"Received chat request for group {group_id} but it doesn't have a user text")
                         continue
+
+                    # Multi-agent orchestration checks (match logical agent pubkey)
+                    current_target = payload.get("current_target")
+                    remaining_chain = payload.get("remaining_chain")
+                    if current_target:
+                        if current_target not in _npc_cache_by_pubkey:
+                            print(f"Received chat request for group {group_id} but it doesn't have a current target")
+                            continue
+                    elif isinstance(remaining_chain, list) and remaining_chain:
+                        first_agent_pubkey = None
+                        first_agent = remaining_chain[0]
+                        if isinstance(first_agent, dict):
+                            first_agent_pubkey = first_agent.get("pubkey")
+                        if not first_agent_pubkey or first_agent_pubkey not in _npc_cache_by_pubkey:
+                            print(f"Received chat request for group {group_id} but it doesn't have a first agent pubkey")
+                            continue
 
                     evm_address = next((t[1] for t in tags if t[0] == "evm_address"), None)
 
                     # Extract agent_name and agent_avatar from user's payload
                     user_agent_name = payload.get("agent_name")
                     user_agent_avatar = payload.get("agent_avatar")
+                    is_relay_message = payload.get("is_relay_message")
+                    history_ids = payload.get("history_ids")
+                    if not isinstance(history_ids, list):
+                        history_ids = []
 
                     print(f"Processing chat request from Nostr: {user_text[:50]}...")
                     request_id = str(uuid.uuid4())
                     received_ts = time.time()
                     
-                    # Use user's agent_name/avatar if provided, otherwise use config defaults, otherwise use model name
-                    final_agent_name = user_agent_name or _default_agent_name or target_model_name
-                    final_agent_avatar = user_agent_avatar or _default_agent_avatar
+                    # Use user's agent_name/avatar if provided, otherwise use model name
+                    final_agent_name = user_agent_name or target_model_name
+                    final_agent_avatar = user_agent_avatar
                     
                     request_data = {
                         "model": model_tag,
@@ -360,6 +544,10 @@ async def process_nostr_events(target_model_name: str):
                             "user_pubkey": event.pubkey,
                             "agent_name": final_agent_name,
                             "agent_avatar": final_agent_avatar,
+                            "current_target": current_target,
+                            "remaining_chain": remaining_chain,
+                            "is_relay_message": is_relay_message,
+                            "history_ids": history_ids,
                         }
                     }
                     print(f"Request data: {request_data}")
@@ -621,25 +809,23 @@ if __name__ == "__main__":
             # Set global variable for lifespan to use
             _nostr_startup_info = args.model_name
             
-            # Store agent_name and agent_avatar from config for use in Kind 42 event processing
-            global _default_agent_name, _default_agent_avatar
-            _default_agent_name = getattr(args, "agent_name", None)
-            _default_agent_avatar = getattr(args, "agent_avatar", None)
-            
-            # Restore group keys from relay history after initialization
-            pub = get_publisher()
-            if pub and relays:
-                try:
-                    restore_group_keys_from_relay(pub, relays, timeout=10)
-                except Exception as e:
-                    logger.warning(f"Failed to restore group keys from relay during startup: {e}")
-                
         except Exception as e:
             print(f"Failed to initialize Nostr publisher (scheduler): {e}")
 
     # Set p2p_usage_api_url early, before any requests can be processed
     if getattr(args, "p2p_usage_api_url", None):
         request_handler.set_p2p_usage_api_url(args.p2p_usage_api_url)
+
+    # Load NPC cache when starting the scheduler
+    _load_npc_cache(getattr(args, "p2p_usage_api_url", None))
+    # Load persisted group keys and invite restore state
+    _load_persistent_cache()
+    # Restore group keys for all NPCs from relay history
+    if relays:
+        try:
+            restore_group_keys_from_relay_for_npcs(relays, timeout=10, max_pages=None)
+        except Exception as e:
+            print(f"Failed to restore NPC group keys from relay during startup: {e}")
     
     scheduler_manage = SchedulerManage(
         initial_peers=args.initial_peers,

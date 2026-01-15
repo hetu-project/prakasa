@@ -120,6 +120,15 @@ class HTTPRequestInfo:
     user_pubkey: Optional[str] = None  # User public key (for p tag)
     agent_name: Optional[str] = None  # Agent name (from scheduler's model_name)
     agent_avatar: Optional[str] = None  # Agent avatar URL or identifier
+    # Multi-agent orchestration
+    current_target: Optional[str] = None  # Incoming current target pubkey
+    remaining_chain: Optional[List[Dict]] = None  # Incoming remaining chain
+    history_ids: List[str] = field(default_factory=list)  # Accumulated history IDs
+    is_relay_message: Optional[bool] = None  # Incoming relay flag
+    next_current_target: Optional[str] = None  # Next target after pop
+    next_remaining_chain: Optional[List[Dict]] = None  # Next chain after pop
+    orchestration_status: Optional[str] = None  # processing/completed
+    is_orchestration: bool = False  # Whether orchestration is active
     # Nostr task tracking
     task_event_id: Optional[str] = None  # Task event ID for workload proof
     routing_table: Optional[List[str]] = None  # Routing table for workload proof
@@ -183,6 +192,51 @@ class HTTPHandler:
         agent_avatar = extra_body.get("agent_avatar") or request.get("agent_avatar")
         task_event_id = extra_body.get("task_event_id") or request.get("task_event_id")
         routing_table = request.get("routing_table")
+        # Orchestration fields
+        current_target = extra_body.get("current_target") or request.get("current_target")
+        remaining_chain = extra_body.get("remaining_chain") or request.get("remaining_chain")
+        is_relay_message = (
+            extra_body.get("is_relay_message")
+            if "is_relay_message" in extra_body
+            else request.get("is_relay_message")
+        )
+        history_ids = extra_body.get("history_ids") or request.get("history_ids") or []
+        if not isinstance(history_ids, list):
+            history_ids = []
+
+        # Pop logic for orchestration
+        is_orchestration = current_target is not None or isinstance(remaining_chain, list)
+        next_current_target = None
+        next_remaining_chain: List[Dict] = []
+        orchestration_status = None
+        if is_orchestration:
+            current_agent_pubkey = None
+            if current_target:
+                current_agent_pubkey = current_target
+            elif isinstance(remaining_chain, list) and remaining_chain:
+                first_agent = remaining_chain[0]
+                if isinstance(first_agent, dict):
+                    current_agent_pubkey = first_agent.get("pubkey")
+
+            if isinstance(remaining_chain, list) and remaining_chain:
+                filtered_chain = [
+                    agent
+                    for agent in remaining_chain
+                    if isinstance(agent, dict)
+                    and agent.get("pubkey") != current_agent_pubkey
+                ]
+                if filtered_chain:
+                    first_next = filtered_chain[0]
+                    next_current_target = (
+                        first_next.get("pubkey") if isinstance(first_next, dict) else None
+                    )
+                    next_remaining_chain = filtered_chain[1:]
+
+            orchestration_status = "processing" if next_current_target else "completed"
+
+            if reply_to_event_id:
+                history_ids = list(history_ids)
+                history_ids.append(reply_to_event_id)
         
         request_info = HTTPRequestInfo(
             id=rid,
@@ -201,6 +255,14 @@ class HTTPHandler:
             agent_avatar=agent_avatar,
             task_event_id=task_event_id,
             routing_table=routing_table,
+            current_target=current_target,
+            remaining_chain=remaining_chain if isinstance(remaining_chain, list) else None,
+            history_ids=history_ids,
+            is_relay_message=is_relay_message,
+            next_current_target=next_current_target,
+            next_remaining_chain=next_remaining_chain if is_orchestration else None,
+            orchestration_status=orchestration_status,
+            is_orchestration=is_orchestration,
         )
         if stream:
             request_info.token_queue = asyncio.Queue()
@@ -608,13 +670,23 @@ class HTTPHandler:
                 logger.warning(f"No Nostr publisher available, skipping publish for request {rid}")
                 return
             
+            # Orchestration fields: include in both streaming chunks and final message.
+            status_value = request_info.orchestration_status
+            if request_info.is_orchestration and not is_final:
+                status_value = "processing"
+
             payload = PayloadBuilder.build_chat_message(
                 text=text_to_publish,
                 model=request_info.model,
                 agent_name=request_info.agent_name or "prakasa-agent",
                 reply_to=request_info.reply_to_event_id,
                 agent_avatar=request_info.agent_avatar,
-                is_streaming=not is_final
+                is_streaming=not is_final,
+                current_target=request_info.next_current_target,
+                remaining_chain=request_info.next_remaining_chain,
+                is_relay_message=True if request_info.is_orchestration else None,
+                history_ids=request_info.history_ids if request_info.is_orchestration else None,
+                status=status_value if request_info.is_orchestration else None,
             )
             encrypted_content = GroupV1Crypto.encrypt(payload, request_info.group_key)
             
