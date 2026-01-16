@@ -797,8 +797,8 @@ if __name__ == "__main__":
     check_latest_release()
 
     # Initialize global Nostr publisher for scheduler node if configured.
+    relays = getattr(args, "nostr_relays", None) or []
     if getattr(args, "nostr_privkey", None):
-        relays = getattr(args, "nostr_relays", None) or []
         try:
             init_global_publisher(
                 args.nostr_privkey,
