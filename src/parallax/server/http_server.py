@@ -515,8 +515,7 @@ class HTTPHandler:
                 or recv_dict.get("abort", False)
             )
 
-            # Only process and send non-EOS tokens
-            if not is_finished and len(output) > 0:
+            if len(output) > 0:
                 # Accumulate full text for non-streaming and potentially for logging
                 request_info.text += output
 
