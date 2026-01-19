@@ -501,9 +501,7 @@ class HTTPHandler:
             next_token_id = recv_dict["next_token_id"]
             request_info.completion_tokens += 1
             request_info.detokenizer.add_token(next_token_id)
-            output = request_info.detokenizer.last_segment
-            if output:
-                output = output.replace("<|im_end|>", "")
+            output = request_info.detokenizer.last_segment                
             request_info.weight_version = recv_dict.get("weight_version", None)
 
             # Store probs and token IDs if requested
@@ -516,7 +514,9 @@ class HTTPHandler:
                 or recv_dict.get("length", False)
                 or recv_dict.get("abort", False)
             )
-
+            
+            if is_finished:
+                output = output.replace("<|im_end|>", "")
             if len(output) > 0:
                 # Accumulate full text for non-streaming and potentially for logging
                 request_info.text += output
