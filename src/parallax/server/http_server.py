@@ -502,6 +502,8 @@ class HTTPHandler:
             request_info.completion_tokens += 1
             request_info.detokenizer.add_token(next_token_id)
             output = request_info.detokenizer.last_segment
+            if output:
+                output = output.replace("<|im_end|>", "")
             request_info.weight_version = recv_dict.get("weight_version", None)
 
             # Store probs and token IDs if requested
