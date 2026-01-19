@@ -559,14 +559,29 @@ async def process_nostr_events(target_model_name: str):
                     history_ids = payload.get("history_ids")
                     if not isinstance(history_ids, list):
                         history_ids = []
+                    
+                    # If no next target exists, skip.
+                    target_pubkey = current_target
+                    if not target_pubkey and isinstance(remaining_chain, list) and remaining_chain:
+                        first_agent = remaining_chain[0]
+                        if isinstance(first_agent, dict):
+                            target_pubkey = first_agent.get("pubkey")
+                    if is_relay_message and not target_pubkey:
+                        print(f"Received relay message for group {group_id} without next target, skipping")
+                        continue
 
                     print(f"Processing chat request from Nostr: {user_text[:50]}...")
                     request_id = str(uuid.uuid4())
                     received_ts = time.time()
-                    
-                    # Use user's agent_name/avatar if provided, otherwise use model name
-                    final_agent_name = user_agent_name or target_model_name
-                    final_agent_avatar = user_agent_avatar
+
+                    # Check if target_pubkey is in the local NPC cache
+                    npc_info = _npc_cache_by_pubkey.get(target_pubkey) if target_pubkey else None
+                    if npc_info:
+                        final_agent_name = npc_info.get("name") or target_model_name
+                        final_agent_avatar = npc_info.get("icon")
+                    else:
+                        final_agent_name = user_agent_name or target_model_name
+                        final_agent_avatar = user_agent_avatar
                     
                     request_data = {
                         "model": model_tag,
