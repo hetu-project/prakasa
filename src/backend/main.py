@@ -163,7 +163,7 @@ def _store_group_key(group_id: str, key: str) -> None:
     _save_persistent_cache()
 
 
-def _load_npc_cache(p2p_usage_api_url: Optional[str]) -> None:
+def _load_npc_cache(p2p_usage_api_url: Optional[str], access_code: Optional[str]) -> None:
     """Load NPC info from external P2P explore API into memory."""
     global _npc_cache_by_pubkey
     if not p2p_usage_api_url:
@@ -173,7 +173,10 @@ def _load_npc_cache(p2p_usage_api_url: Optional[str]) -> None:
 
     url = f"{p2p_usage_api_url.rstrip('/')}/api/v1/chat/p2p/explore"
     try:
-        response = requests.get(url, timeout=10)
+        params = {}
+        if access_code:
+            params["access_code"] = access_code
+        response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
         items = data.get("items", []) if isinstance(data, dict) else []
@@ -815,9 +818,10 @@ if __name__ == "__main__":
     # Set p2p_usage_api_url early, before any requests can be processed
     if getattr(args, "p2p_usage_api_url", None):
         request_handler.set_p2p_usage_api_url(args.p2p_usage_api_url)
+    request_handler.set_access_code(getattr(args, "access_code", None))
 
     # Load NPC cache when starting the scheduler
-    _load_npc_cache(getattr(args, "p2p_usage_api_url", None))
+    _load_npc_cache(getattr(args, "p2p_usage_api_url", None), getattr(args, "access_code", None))
     # Load persisted group keys and invite restore state
     _load_persistent_cache()
     # Restore group keys for all NPCs from relay history
@@ -841,6 +845,7 @@ if __name__ == "__main__":
         enable_weight_refit=args.enable_weight_refit,
         eth_account=args.eth_account,
         p2p_usage_api_url=getattr(args, "p2p_usage_api_url", None),
+        access_code=getattr(args, "access_code", None),
     )
 
     request_handler.set_scheduler_manage(scheduler_manage)

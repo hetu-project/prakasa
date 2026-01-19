@@ -72,6 +72,12 @@ def parse_args() -> argparse.Namespace:
         help="P2P usage API base URL for logging token usage",
     )
     parser.add_argument(
+        "--access-code",
+        type=str,
+        default=None,
+        help="Access code for P2P explore API",
+    )
+    parser.add_argument(
         "--agent-name",
         type=str,
         default=None,

@@ -36,6 +36,7 @@ class SchedulerManage:
         enable_weight_refit: bool = False,
         eth_account: str = None,
         p2p_usage_api_url: Optional[str] = None,
+        access_code: Optional[str] = None,
     ):
         """Initialize the manager with networking bootstrap parameters."""
         self.initial_peers = initial_peers
@@ -48,6 +49,7 @@ class SchedulerManage:
         self.enable_weight_refit = enable_weight_refit
         self.eth_account = eth_account
         self.p2p_usage_api_url = p2p_usage_api_url
+        self.access_code = access_code
         self.model_name = None
         self.init_nodes_num = None
         self.scheduler = None
@@ -253,6 +255,7 @@ class SchedulerManage:
             min_nodes_bootstrapping=init_nodes_num,
             enable_weight_refit=self.enable_weight_refit,
             p2p_usage_api_url=self.p2p_usage_api_url,
+            access_code=self.access_code,
         )
 
         # Run the scheduler's event/dispatch loops in background so the process

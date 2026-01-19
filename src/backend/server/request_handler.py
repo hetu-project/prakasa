@@ -41,6 +41,7 @@ class RequestHandler:
         self.scheduler_manage = None
         self.stubs = {}
         self.p2p_usage_api_url = None
+        self.access_code = None
 
     def set_scheduler_manage(self, scheduler_manage):
         self.scheduler_manage = scheduler_manage
@@ -48,6 +49,10 @@ class RequestHandler:
     def set_p2p_usage_api_url(self, api_url: str):
         """Set the P2P usage API base URL for logging token usage."""
         self.p2p_usage_api_url = api_url
+
+    def set_access_code(self, access_code: Optional[str]) -> None:
+        """Set access code for P2P usage/reward APIs."""
+        self.access_code = access_code
 
     def _get_workers_info(self, routing_table: list) -> list:
         """Get worker information (node_id and account) from routing table.
@@ -111,6 +116,7 @@ class RequestHandler:
             payload = {
                 "address": address,
                 "api_key": api_key or "",
+                "access_code": self.access_code or "",
                 "model_name": model_name,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,

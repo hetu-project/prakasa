@@ -45,6 +45,7 @@ class Scheduler:
         request_warm_up_for_reshard: int = 0,
         heartbeat_timeout: float = 60.0,
         p2p_usage_api_url: Optional[str] = None,
+        access_code: Optional[str] = None,
     ) -> None:
         """Initialize the scheduler.
 
@@ -92,6 +93,7 @@ class Scheduler:
         self.request_arrival_horizon_sec = request_arrival_horizon_sec
         self.heartbeat_timeout = heartbeat_timeout
         self.p2p_usage_api_url = p2p_usage_api_url
+        self.access_code = access_code
         self._arrival_ts: Deque[float] = deque()
 
         # Event queues for main loop orchestration (thread-safe)
@@ -388,6 +390,7 @@ class Scheduler:
             url = f"{self.p2p_usage_api_url.rstrip('/')}/api/v1/subnet/p2p/reward"
             payload = {
                 "address": address,
+                "access_code": self.access_code or "",
                 "reward_type": "credit",
                 "amount": "2",
             }
