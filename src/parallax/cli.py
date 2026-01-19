@@ -285,6 +285,24 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 if p2p_api_url:  # Only add if not null
                     passthrough_args = passthrough_args or []
                     passthrough_args.extend(["--p2p-usage-api-url", str(p2p_api_url)])
+            # passthrough: access_code
+            if "access_code" in cmd_conf and not _flag_present(passthrough_args, ["--access-code"]):
+                access_code_val = cmd_conf.get("access_code")
+                if access_code_val:  # Only add if not null
+                    passthrough_args = passthrough_args or []
+                    passthrough_args.extend(["--access-code", str(access_code_val)])
+            # passthrough: agent_name
+            if "agent_name" in cmd_conf and not _flag_present(passthrough_args, ["--agent-name"]):
+                agent_name_val = cmd_conf.get("agent_name")
+                if agent_name_val:  # Only add if not null
+                    passthrough_args = passthrough_args or []
+                    passthrough_args.extend(["--agent-name", str(agent_name_val)])
+            # passthrough: agent_avatar
+            if "agent_avatar" in cmd_conf and not _flag_present(passthrough_args, ["--agent-avatar"]):
+                agent_avatar_val = cmd_conf.get("agent_avatar")
+                if agent_avatar_val:  # Only add if not null
+                    passthrough_args = passthrough_args or []
+                    passthrough_args.extend(["--agent-avatar", str(agent_avatar_val)])
 
         # join command options
         if args.command == "join":
