@@ -28,6 +28,7 @@ import fastapi
 import uvicorn
 import zmq
 import zmq.asyncio
+import httpx
 from fastapi.responses import ORJSONResponse, StreamingResponse
 from mlx_lm.tokenizer_utils import StreamingDetokenizer
 from mlx_lm.utils import load_config
@@ -129,6 +130,10 @@ class HTTPRequestInfo:
     next_remaining_chain: Optional[List[Dict]] = None  # Next chain after pop
     orchestration_status: Optional[str] = None  # processing/completed
     is_orchestration: bool = False  # Whether orchestration is active
+    next_target_model: Optional[str] = None  # Next target model after pop
+    # Local relay trigger
+    local_event_url: Optional[str] = None  # Scheduler local event ingestion URL
+    local_npc_pubkeys: Optional[List[str]] = None  # Local NPC pubkeys
     # Nostr task tracking
     task_event_id: Optional[str] = None  # Task event ID for workload proof
     routing_table: Optional[List[str]] = None  # Routing table for workload proof
@@ -192,6 +197,10 @@ class HTTPHandler:
         agent_avatar = extra_body.get("agent_avatar") or request.get("agent_avatar")
         task_event_id = extra_body.get("task_event_id") or request.get("task_event_id")
         routing_table = request.get("routing_table")
+        local_event_url = extra_body.get("local_event_url") or request.get("local_event_url")
+        local_npc_pubkeys = extra_body.get("local_npc_pubkeys") or request.get("local_npc_pubkeys")
+        if not isinstance(local_npc_pubkeys, list):
+            local_npc_pubkeys = None
         # Orchestration fields
         current_target = extra_body.get("current_target") or request.get("current_target")
         remaining_chain = extra_body.get("remaining_chain") or request.get("remaining_chain")
@@ -230,6 +239,8 @@ class HTTPHandler:
                     next_current_target = (
                         first_next.get("pubkey") if isinstance(first_next, dict) else None
                     )
+                    if isinstance(first_next, dict):
+                        next_target_model = first_next.get("model")
                     next_remaining_chain = filtered_chain[1:]
 
             orchestration_status = "processing" if next_current_target else "completed"
@@ -263,6 +274,9 @@ class HTTPHandler:
             next_remaining_chain=next_remaining_chain if is_orchestration else None,
             orchestration_status=orchestration_status,
             is_orchestration=is_orchestration,
+            next_target_model=next_target_model if is_orchestration else None,
+            local_event_url=local_event_url,
+            local_npc_pubkeys=local_npc_pubkeys,
         )
         if stream:
             request_info.token_queue = asyncio.Queue()
@@ -709,7 +723,37 @@ class HTTPHandler:
                 group_id=request_info.group_id,
                 tags=event_tags if event_tags else None
             )
+            
+            try:
+                chat_event.sign(pub._private_key.hex())
+            except Exception:
+                pass
+
             pub.publish_event(chat_event)
+
+            # Local trigger
+            if (
+                request_info.local_event_url
+                and request_info.next_current_target
+                and request_info.local_npc_pubkeys
+                and request_info.next_current_target in request_info.local_npc_pubkeys
+                and request_info.next_target_model
+                and request_info.next_target_model == request_info.model
+            ):
+                event_payload = {
+                    "id": getattr(chat_event, "id", None),
+                    "pubkey": getattr(chat_event, "pubkey", None),
+                    "created_at": getattr(chat_event, "created_at", None),
+                    "kind": getattr(chat_event, "kind", None),
+                    "tags": getattr(chat_event, "tags", None),
+                    "content": getattr(chat_event, "content", None),
+                    "sig": getattr(chat_event, "sig", None),
+                }
+                try:
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        await client.post(request_info.local_event_url, json=event_payload)
+                except Exception as e:
+                    logger.debug(f"Failed to send local Nostr event: {e}")
             logger.debug(
                 f"Published chat chunk for request {rid} (group_id={request_info.group_id[:8]}..., "
                 f"length={len(text_to_publish)}, is_final={is_final}, is_streaming={not is_final})"

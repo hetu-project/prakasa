@@ -5,6 +5,7 @@ import time
 import traceback
 import uuid
 import queue
+from types import SimpleNamespace
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, Optional
@@ -61,6 +62,9 @@ _restore_state = {
     "last_seen_ts": None,
     "processed_event_ids": set(),
 }
+_local_event_queue: "queue.Queue" = queue.Queue()
+_seen_chat_event_ids: set = set()
+_local_event_url: Optional[str] = None
 _MAX_PROCESSED_EVENT_IDS = 5000
 _RESTORE_OVERLAP_SECONDS = 30 * 60
 
@@ -216,6 +220,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.post("/internal/nostr/local_event")
+async def ingest_local_nostr_event(raw_request: Request):
+    """Inject locally published Nostr event to avoid relay latency."""
+    try:
+        data = await raw_request.json()
+        event = SimpleNamespace(
+            id=data.get("id"),
+            pubkey=data.get("pubkey"),
+            created_at=data.get("created_at"),
+            kind=data.get("kind"),
+            tags=data.get("tags") or [],
+            content=data.get("content") or "",
+        )
+        _local_event_queue.put(event)
+        return JSONResponse(content={"ok": True}, status_code=200)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
 
 
 # --- Group Key Management (In-Memory) ---
@@ -418,10 +441,13 @@ async def process_nostr_events(target_model_name: str):
     while True:
         try:
             try:
-                event = event_channel.get_nowait()
+                event = _local_event_queue.get_nowait()
             except queue.Empty:
-                await asyncio.sleep(0.5)
-                continue
+                try:
+                    event = event_channel.get_nowait()
+                except queue.Empty:
+                    await asyncio.sleep(0.5)
+                    continue
 
             if request_handler.scheduler_manage is None:
                 await asyncio.sleep(1)
@@ -479,6 +505,9 @@ async def process_nostr_events(target_model_name: str):
             # --- Handle Kind 42 (Chat Request) ---
             elif kind == CHAT_KIND:
                 tags = getattr(event, "tags", [])
+                event_id = getattr(event, "id", None)
+                if event_id and event_id in _seen_chat_event_ids:
+                    continue
                 model_tag = next((t[1] for t in tags if t[0] == "model"), None)
                 if model_tag != target_model_name:
                     print(f"Received chat request for model {model_tag} but it's not for us")
@@ -551,6 +580,8 @@ async def process_nostr_events(target_model_name: str):
                             "remaining_chain": remaining_chain,
                             "is_relay_message": is_relay_message,
                             "history_ids": history_ids,
+                            "local_event_url": _local_event_url,
+                            "local_npc_pubkeys": list(_npc_cache_by_pubkey.keys()),
                         }
                     }
                     print(f"Request data: {request_data}")
@@ -561,7 +592,8 @@ async def process_nostr_events(target_model_name: str):
                     if isinstance(response, StreamingResponse):
                         async for _ in response.body_iterator:
                             pass 
-                    
+                    if event_id:
+                        _seen_chat_event_ids.add(event_id)
                     print(f"Finished processing Nostr request {request_id}")
 
                 except Exception as e:
@@ -819,6 +851,10 @@ if __name__ == "__main__":
     if getattr(args, "p2p_usage_api_url", None):
         request_handler.set_p2p_usage_api_url(args.p2p_usage_api_url)
     request_handler.set_access_code(getattr(args, "access_code", None))
+
+    local_host = args.host if args.host and args.host != "0.0.0.0" else "127.0.0.1"
+    global _local_event_url
+    _local_event_url = f"http://{local_host}:{args.port}/internal/nostr/local_event"
 
     # Load NPC cache when starting the scheduler
     _load_npc_cache(getattr(args, "p2p_usage_api_url", None), getattr(args, "access_code", None))
