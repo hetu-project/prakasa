@@ -19,7 +19,7 @@ run:
   # Optional EVM account address for scheduler node
   eth_account: null
   # P2P usage API base URL
-  p2p_usage_api_url: null
+  p2p_usage_api_url: https://nftkashai.online/subnet/subnet
   # Access code for P2P API
   access_code: null
   # Nostr configuration for scheduler node

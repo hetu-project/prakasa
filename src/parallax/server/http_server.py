@@ -216,6 +216,7 @@ class HTTPHandler:
         # Pop logic for orchestration
         is_orchestration = current_target is not None or isinstance(remaining_chain, list)
         next_current_target = None
+        next_target_model = None
         next_remaining_chain: List[Dict] = []
         orchestration_status = None
         if is_orchestration:
