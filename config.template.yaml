@@ -23,7 +23,6 @@ run:
   # Access code for P2P API
   access_code: null
   # Nostr configuration for scheduler node
-  access_code: null
   nostr:
     # nsec-encoded Nostr private key; if null, a new one will be generated on first run
     privkey: null
