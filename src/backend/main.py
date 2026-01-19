@@ -853,7 +853,6 @@ if __name__ == "__main__":
     request_handler.set_access_code(getattr(args, "access_code", None))
 
     local_host = args.host if args.host and args.host != "0.0.0.0" else "127.0.0.1"
-    global _local_event_url
     _local_event_url = f"http://{local_host}:{args.port}/internal/nostr/local_event"
 
     # Load NPC cache when starting the scheduler
