@@ -525,6 +525,9 @@ async def process_nostr_events(target_model_name: str):
                         continue
 
                     payload = GroupV1Crypto.decrypt(event.content, shared_key)
+                    if payload.get("is_streaming") or payload.get("type") == "text_chunk":
+                        print(f"Received streaming chunk for group {group_id}, waiting for final message")
+                        continue
                     user_text = payload.get("text", "")
                     
                     if not user_text:

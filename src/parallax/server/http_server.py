@@ -707,6 +707,8 @@ class HTTPHandler:
             
             # Build additional tags (don't include 'g' tag, it will be added by from_encrypted_content)
             event_tags = []
+            if request_info.model:
+                event_tags.append(["model", request_info.model])
             if request_info.reply_to_event_id:
                 event_tags.append(["e", request_info.reply_to_event_id, "", "reply"])
             
