@@ -528,7 +528,14 @@ async def process_nostr_events(target_model_name: str):
                     if payload.get("is_streaming") or payload.get("type") == "text_chunk":
                         print(f"Received streaming chunk for group {group_id}, waiting for final message")
                         continue
-                    user_text = payload.get("text", "")
+                    raw_text = payload.get("text", "")
+                    # Prefer forwarding only the final answer (strip <think> blocks if present)
+                    user_text = raw_text
+                    if isinstance(raw_text, str):
+                        if "</think>" in raw_text:
+                            user_text = raw_text.split("</think>", 1)[1].lstrip()
+                        else:
+                            user_text = raw_text.replace("<think>", "").strip()
                     
                     if not user_text:
                         print(f"Received chat request for group {group_id} but it doesn't have a user text")
