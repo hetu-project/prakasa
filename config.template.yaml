@@ -41,7 +41,7 @@ join:
   eth_account: null
   # Optional passthrough defaults for join command
   max_num_tokens_per_batch: 4096
-  max_sequence_length: 2048
+  max_sequence_length: 8192
   max_batch_size: 8
   kv_block_size: 32
   # Log Level setting
