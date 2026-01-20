@@ -69,15 +69,15 @@ class RequestHandler:
         
         scheduler = self.scheduler_manage.scheduler
         for node_id in routing_table:
-            if node_id in scheduler.node_id_to_node:
-                node = scheduler.node_id_to_node[node_id]
+            node = scheduler.node_manager.get(node_id)
+            if node is not None:
                 worker_info = {
                     "node_id": node_id,
                     "account": node.account if node.account else None,
                 }
                 workers.append(worker_info)
             else:
-                logger.warning(f"Node {node_id} not found in scheduler.node_id_to_node")
+                logger.warning(f"Node {node_id} not found in scheduler.node_manager")
                 workers.append({
                     "node_id": node_id,
                     "account": None,
@@ -221,7 +221,7 @@ class RequestHandler:
             
             assignments = []
             for node_id in routing_table:
-                node = scheduler.node_id_to_node.get(node_id)
+                node = scheduler.node_manager.get(node_id)
                 if node is None:
                     logger.debug(f"_publish_assignment_event: node {node_id} not found in scheduler")
                     continue
