@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Alert,
   Button,
@@ -29,6 +29,7 @@ const Stack = styled(MuiStack)(({ theme }) => {
 });
 
 export default function PageJoin() {
+  const navigate = useNavigate();
   const [
     {
       config: { modelInfo },
@@ -48,6 +49,12 @@ export default function PageJoin() {
     }
     return false;
   }, [clusterStatus, initNodesNumber, nodeInfoList]);
+
+  useEffect(() => {
+    if (clusterStatus === 'available') {
+      navigate('/chat');
+    }
+  }, [clusterStatus, navigate]);
 
   return (
     <MainLayout

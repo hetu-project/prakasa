@@ -223,17 +223,17 @@ class SchedulerManage:
             return None
         
         logger.debug(f"Searching for node with account: {account}")
-        logger.debug(f"Total nodes in scheduler: {len(self.scheduler.nodes)}")
+        logger.debug(f"Total nodes in scheduler: {len(self.scheduler.node_manager.nodes)}")
         
 
-        for node in self.scheduler.nodes:
+        for node in self.scheduler.node_manager.nodes:
             logger.debug(f"Node {node.node_id}: account={node.account}")
             if node.account and node.account.lower() == account.lower():
                 logger.info(f"Found node {node.node_id} with account {account}")
                 return self.build_node_info(node, detailed=True)
         
 
-        accounts = [node.account for node in self.scheduler.nodes if node.account]
+        accounts = [node.account for node in self.scheduler.node_manager.nodes if node.account]
         logger.warning(f"No node found with account {account}. Available accounts: {accounts}")
         return None
 
