@@ -152,6 +152,9 @@ class SchedulerManage:
                 ),
                 "node_list": self.get_node_list(),
                 "need_more_nodes": self.need_more_nodes(),
+                "max_running_request": (
+                    self.scheduler.report_pipeline_capacity()[1] if self.scheduler else 0
+                ),
             },
         }
 
@@ -159,7 +162,7 @@ class SchedulerManage:
         if self.scheduler is None:
             return []
 
-        return [self.build_node_info(node) for node in self.scheduler.nodes]
+        return [self.build_node_info(node) for node in self.scheduler.node_manager.nodes]
 
     def build_node_info(self, node, detailed: bool = False):
         """Build node information dictionary.
@@ -390,9 +393,7 @@ class SchedulerManage:
 
         # todo rebalance status
         status = (
-            NODE_STATUS_AVAILABLE
-            if self.scheduler.layer_allocator.has_full_pipeline(active_only=True)
-            else NODE_STATUS_WAITING
+            NODE_STATUS_AVAILABLE if self.scheduler.has_full_pipeline() else NODE_STATUS_WAITING
         )
         logger.debug(f"SchedulerManage status queried: {status}")
         return status

@@ -94,8 +94,9 @@ def form_sgl_batch_prefill(
 
     num_tokens = schedule_batch.extend_num_tokens
     dp_size = model_runner.dp_size
-    schedule_batch.global_num_tokens = [num_tokens] * dp_size
-    schedule_batch.global_num_tokens_for_logprob = [num_tokens] * dp_size
+    if dp_size > 1:
+        schedule_batch.global_num_tokens = [num_tokens] * dp_size
+        schedule_batch.global_num_tokens_for_logprob = [num_tokens] * dp_size
 
     model_worker_batch = schedule_batch.get_model_worker_batch()
     forward_batch = ForwardBatch.init_new(model_worker_batch, model_runner)
@@ -209,8 +210,9 @@ def form_sgl_batch_decode(
 
     num_tokens = len(ready_indices)
     dp_size = model_runner.dp_size
-    ret.global_num_tokens = [num_tokens] * dp_size
-    ret.global_num_tokens_for_logprob = [num_tokens] * dp_size
+    if dp_size > 1:
+        ret.global_num_tokens = [num_tokens] * dp_size
+        ret.global_num_tokens_for_logprob = [num_tokens] * dp_size
 
     model_worker_batch = ret.get_model_worker_batch()
     if requests[0].lora_id is not None:
@@ -227,12 +229,25 @@ def release_sglang_request(running_batch: ScheduleBatch, request_id: str):
     seq_lens_cpu = running_batch.seq_lens.cpu().numpy()
     idx = find_index(running_batch, request_id)
     req = running_batch.reqs.pop(idx)
-
-    # Free kv cache
     page_size = running_batch.token_to_kv_pool_allocator.page_size
     last_uncached_pos = (len(req.prefix_indices) // page_size) * page_size
-    token_indices = running_batch.req_to_token_pool.req_to_token[
-        req.req_pool_idx, last_uncached_pos : seq_lens_cpu[idx]
+    end_pos = last_uncached_pos + seq_lens_cpu[idx]
+    running_batch.seq_lens = torch.cat(
+        (running_batch.seq_lens[:idx], running_batch.seq_lens[idx + 1 :])
+    )
+    running_batch.seq_lens_cpu = torch.cat(
+        (running_batch.seq_lens_cpu[:idx], running_batch.seq_lens_cpu[idx + 1 :])
+    )
+    running_batch.orig_seq_lens = torch.cat(
+        (running_batch.orig_seq_lens[:idx], running_batch.orig_seq_lens[idx + 1 :])
+    )
+
+    # Free kv cache
+    token_indices = running_batch.req_to_token_pool.req_to_token[req.req_pool_idx][
+        last_uncached_pos:end_pos
     ]
     running_batch.token_to_kv_pool_allocator.free(token_indices)
     running_batch.req_to_token_pool.free(req.req_pool_idx)
+    running_batch.req_pool_indices = torch.cat(
+        (running_batch.req_pool_indices[:idx], running_batch.req_pool_indices[idx + 1 :])
+    )
