@@ -629,6 +629,7 @@ Examples:
     )
     run_parser.add_argument("-n", "--init-nodes-num", type=int, help="Number of initial nodes")
     run_parser.add_argument("-m", "--model-name", type=str, help="Model name")
+    run_parser.add_argument("--log-level", type=str, help="Log level (DEBUG, INFO, WARNING, ERROR)")
     run_parser.add_argument(
         "-r", "--use-relay", action="store_true", help="Use public relay servers"
     )
@@ -679,6 +680,7 @@ Examples:
     join_parser.add_argument(
         "-r", "--use-relay", action="store_true", help="Use public relay servers"
     )
+    join_parser.add_argument("--log-level", type=str, help="Log level (DEBUG, INFO, WARNING, ERROR)")
     join_parser.add_argument(
         "-u", "--skip-upload", action="store_true", help="Skip upload package info"
     )
@@ -722,6 +724,7 @@ Examples:
     chat_parser.add_argument(
         "-r", "--use-relay", action="store_true", help="Use public relay servers"
     )
+    chat_parser.add_argument("--log-level", type=str, help="Log level (DEBUG, INFO, WARNING, ERROR)")
     chat_parser.add_argument(
         "--config",
         type=str,
