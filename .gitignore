@@ -15,5 +15,5 @@ venv
 .cursor/
 
 # Local config files
-config.yaml
+config*.yaml
 AGENTS.md
