@@ -3,9 +3,9 @@ module.exports = {
         {
             name: 'prakasa-qwen3-0.6b',
             script: '/root/code/prakasa/venv/bin/prakasa',
-            args: 'run --config config-1.yaml',
+            args: 'run --config /root/code/prakasa/config-1.yaml',
             interpreter: 'none',
-            cwd: '/root/code/prakasa',
+            cwd: '/root/code/prakasa/instances/qwen3-0.6b',
             env: {
                 NODE_ENV: 'production',
             },
@@ -20,9 +20,9 @@ module.exports = {
         {
             name: 'prakasa-qwen2.5-7b',
             script: '/root/code/prakasa/venv/bin/prakasa',
-            args: 'run --config config-2.yaml',
+            args: 'run --config /root/code/prakasa/config-2.yaml',
             interpreter: 'none',
-            cwd: '/root/code/prakasa',
+            cwd: '/root/code/prakasa/instances/qwen2.5-7b',
             env: {
                 NODE_ENV: 'production',
             },
@@ -37,9 +37,9 @@ module.exports = {
         {
             name: 'prakasa-deepseek-v3.2',
             script: '/root/code/prakasa/venv/bin/prakasa',
-            args: 'run --config config-3.yaml',
+            args: 'run --config /root/code/prakasa/config-3.yaml',
             interpreter: 'none',
-            cwd: '/root/code/prakasa',
+            cwd: '/root/code/prakasa/instances/deepseek-v3.2',
             env: {
                 NODE_ENV: 'production',
             },
@@ -54,9 +54,9 @@ module.exports = {
         {
             name: 'prakasa-llama-3.1-8b',
             script: '/root/code/prakasa/venv/bin/prakasa',
-            args: 'run --config config-4.yaml',
+            args: 'run --config /root/code/prakasa/config-4.yaml',
             interpreter: 'none',
-            cwd: '/root/code/prakasa',
+            cwd: '/root/code/prakasa/instances/llama-3.1-8b',
             env: {
                 NODE_ENV: 'production',
             },
@@ -71,9 +71,9 @@ module.exports = {
         {
             name: 'prakasa-llama-3.3-70b',
             script: '/root/code/prakasa/venv/bin/prakasa',
-            args: 'run --config config-5.yaml',
+            args: 'run --config /root/code/prakasa/config-5.yaml',
             interpreter: 'none',
-            cwd: '/root/code/prakasa',
+            cwd: '/root/code/prakasa/instances/llama-3.3-70b',
             env: {
                 NODE_ENV: 'production',
             },
