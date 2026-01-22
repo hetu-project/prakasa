@@ -683,7 +683,13 @@ class HTTPHandler:
         try:
             pub = get_publisher()
             if pub is None:
-                logger.warning(f"No Nostr publisher available, skipping publish for request {rid}")
+                # Only log once per request (first time we try to publish)
+                if not hasattr(request_info, '_nostr_warning_logged'):
+                    logger.info(
+                        f"Nostr publisher not initialized, skipping group chat publishing for request {rid}. "
+                        f"To enable, configure nostr.privkey in config file or pass --nostr-privkey flag."
+                    )
+                    request_info._nostr_warning_logged = True
                 return
             
             # Orchestration fields: include in both streaming chunks and final message.
@@ -937,17 +943,28 @@ class ParallaxHttpServer:
         2. Inter-process communication is done through IPC (each process uses a different port) via the ZMQ library.
         """
         # Initialize Nostr publisher in this subprocess
-        if NOSTR_AVAILABLE and self.nostr_privkey:
-            try:
-                init_global_publisher(
-                    self.nostr_privkey,
-                    relays=self.nostr_relays,
-                    sid="prakasa-http",
-                    role="http-server",
+        if NOSTR_AVAILABLE:
+            if self.nostr_privkey:
+                try:
+                    init_global_publisher(
+                        self.nostr_privkey,
+                        relays=self.nostr_relays,
+                        sid="prakasa-http",
+                        role="http-server",
+                    )
+                    logger.info(
+                        f"Initialized Nostr publisher in HTTP server subprocess "
+                        f"(relays: {self.nostr_relays})"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to initialize Nostr publisher in HTTP server: {e}")
+            else:
+                logger.warning(
+                    "Nostr private key not provided, group chat publishing will be unavailable. "
+                    "To enable, set nostr.privkey in config or pass --nostr-privkey"
                 )
-                logger.info("Initialized Nostr publisher in HTTP server subprocess")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Nostr publisher in HTTP server: {e}")
+        else:
+            logger.debug("prakasa_nostr module not available")
         
         asyncio.run(
             init_app_states(

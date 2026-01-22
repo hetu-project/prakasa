@@ -348,32 +348,45 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
             if not _cli_flag_provided(["--nostr-relay"]) and "relays" in nostr_conf:
                 setattr(args, "nostr_relays", nostr_conf.get("relays") or [])
 
-    # If no Nostr private key was provided anywhere, lazily generate one and
-    # persist it back into the current config file so future runs are stable.
+    # If no Nostr private key was provided anywhere, lazily generate one.
+    # For custom config files (not config.template.yaml), persist it back so future runs are stable.
+    # For command-line only usage or default template, generate temporarily without persisting.
     default_cfg_path = project_root / "config.template.yaml"
     using_default_cfg = config_path is not None and str(default_cfg_path) == str(config_path)
 
-    if not using_default_cfg and getattr(args, "nostr_privkey", None) is None:
-        if config_data is None:
-            config_data = {}
-        cmd_section = config_data.setdefault(args.command, {})
-        nostr_section = cmd_section.setdefault("nostr", {})
-        if not nostr_section.get("privkey"):
-            pk = PrivateKey()
-            nostr_section["privkey"] = pk.bech32()
-            nostr_section["pubkey"] = pk.public_key.bech32()
-            # Remove legacy typo key if present
-            nostr_section.pop("pukkey", None)
-            setattr(args, "nostr_privkey", nostr_section["privkey"])
-            # Ensure relays array exists
-            nostr_section.setdefault("relays", ["wss://nostr.parallel.hetu.org:8443"])
+    if getattr(args, "nostr_privkey", None) is None:
+        pk = PrivateKey()
+        generated_privkey = pk.bech32()
+        generated_pubkey = pk.public_key.bech32()
+        setattr(args, "nostr_privkey", generated_privkey)
+        
+        # Only persist to file if using a custom (non-default) config file
+        if not using_default_cfg and config_path is not None:
+            if config_data is None:
+                config_data = {}
+            cmd_section = config_data.setdefault(args.command, {})
+            nostr_section = cmd_section.setdefault("nostr", {})
+            if not nostr_section.get("privkey"):
+                nostr_section["privkey"] = generated_privkey
+                nostr_section["pubkey"] = generated_pubkey
+                # Remove legacy typo key if present
+                nostr_section.pop("pukkey", None)
+                # Ensure relays array exists
+                nostr_section.setdefault("relays", ["wss://nostr.parallel.hetu.org:8443"])
 
-            try:
-                if yaml is not None:
-                    with open(config_path, "w", encoding="utf-8") as f:
-                        yaml.safe_dump(config_data, f, sort_keys=False, allow_unicode=True)
-            except Exception as e:
-                logger.warning(f"Failed to persist generated Nostr key to {config_path}: {e}")
+                try:
+                    if yaml is not None:
+                        with open(config_path, "w", encoding="utf-8") as f:
+                            yaml.safe_dump(config_data, f, sort_keys=False, allow_unicode=True)
+                        logger.debug(f"Generated and saved Nostr keypair to {config_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to persist generated Nostr key to {config_path}: {e}")
+        else:
+            logger.debug(f"Generated temporary Nostr keypair (pubkey: {generated_pubkey[:16]}...)")
+        
+        # Ensure relays are set if not already provided
+        if not getattr(args, "nostr_relays", None):
+            setattr(args, "nostr_relays", ["wss://nostr.parallel.hetu.org:8443"])
 
     return args, passthrough_args
 
