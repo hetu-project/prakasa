@@ -16,6 +16,10 @@ run:
   host: "127.0.0.1"
   # Log Level setting
   log_level: INFO
+  # P2P TCP port (0 for random assignment)
+  tcp_port: 0
+  # P2P UDP port (0 for random assignment)
+  udp_port: 0
   # Optional EVM account address for scheduler node
   eth_account: null
   # P2P usage API base URL

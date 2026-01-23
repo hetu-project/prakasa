@@ -266,7 +266,11 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 setattr(args, "agent_name", cmd_conf.get("agent_name"))
             if not _cli_flag_provided(["--agent-avatar"]) and "agent_avatar" in cmd_conf:
                 setattr(args, "agent_avatar", cmd_conf.get("agent_avatar"))
-
+            # P2P port config
+            if not _cli_flag_provided(["--tcp-port"]) and cmd_conf.get("tcp_port") is not None:
+                setattr(args, "tcp_port", cmd_conf.get("tcp_port"))
+            if not _cli_flag_provided(["--udp-port"]) and cmd_conf.get("udp_port") is not None:
+                setattr(args, "udp_port", cmd_conf.get("udp_port"))
             # passthrough: e.g., --port
             if "port" in cmd_conf and not _flag_present(passthrough_args, ["--port"]):
                 passthrough_args = passthrough_args or []
@@ -442,6 +446,14 @@ def run_command(args, passthrough_args: list[str] | None = None):
         cmd.extend(["--nostr-privkey", nostr_privkey])
     for r in nostr_relays:
         cmd.extend(["--nostr-relay", r])
+
+    # P2P port options
+    tcp_port = getattr(args, "tcp_port", None)
+    udp_port = getattr(args, "udp_port", None)
+    if tcp_port is not None and tcp_port > 0:
+        cmd.extend(["--tcp-port", str(tcp_port)])
+    if udp_port is not None and udp_port > 0:
+        cmd.extend(["--udp-port", str(udp_port)])
 
     # Append any passthrough args (unrecognized by this CLI) directly to the command
     if passthrough_args:
@@ -652,6 +664,12 @@ Examples:
     )
     run_parser.add_argument(
         "-u", "--skip-upload", action="store_true", help="Skip upload package info"
+    )
+    run_parser.add_argument(
+        "--tcp-port", type=int, default=0, help="Port for Lattica TCP listening (0 for random)"
+    )
+    run_parser.add_argument(
+        "--udp-port", type=int, default=0, help="Port for Lattica UDP listening (0 for random)"
     )
     run_parser.add_argument(
         "--config",
