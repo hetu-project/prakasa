@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
+import { dynamicBasePathPlugin } from './vite-plugin-base-path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -16,7 +17,7 @@ export default defineConfig({
       },
     },
   },
-  plugins: [react()],
+  plugins: [dynamicBasePathPlugin(), react()],
   server: {
     proxy: {
       '/proxy-api/v1/chat/completions': {

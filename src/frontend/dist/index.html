@@ -1,15 +1,29 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8"/>
-    <link rel="icon" type="image/svg+xml" href="/assets/gradient-icon-CRwZKfVU.svg"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Prakasa by HETU Protocol</title>
-    <script type="module" crossorigin src="/assets/main-BycgtyaV.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/App-tGqlKxFC.js">
-    <link rel="stylesheet" crossorigin href="/assets/App-J8fDKCu3.css">
-  </head>
-  <body>
-    <div id="root"></div>
-  </body>
+    <head>
+    <script>
+      // CRITICAL: This must execute BEFORE any resource loading
+      // Dynamically set base URL for sub-path deployments
+      (function() {
+        const pathname = window.location.pathname;
+        const match = pathname.match(/^\/(qwen3|qwen2\.5|deepseek|llama-3\.1|llama-3\.3)/);
+        if (match) {
+          const base = document.createElement('base');
+          base.href = '/' + match[1] + '/';
+          // Insert as first child of head to ensure it's processed first
+          document.head.insertBefore(base, document.head.firstChild);
+        }
+      })();
+    </script>
+        <meta charset="UTF-8"/>
+        <link rel="icon" type="image/svg+xml" href="/assets/gradient-icon-CRwZKfVU.svg"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>Prakasa by HETU Protocol</title>
+      <script type="module" crossorigin src="/assets/main-BycgtyaV.js"></script>
+      <link rel="modulepreload" crossorigin href="/assets/App-tGqlKxFC.js">
+      <link rel="stylesheet" crossorigin href="/assets/App-J8fDKCu3.css">
+    </head>
+    <body>
+        <div id="root"></div>
+    </body>
 </html>
