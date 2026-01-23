@@ -1,6 +1,14 @@
 import { createHttpStreamFactory } from './http-stream';
 
-export const API_BASE_URL = import.meta.env.DEV ? '/proxy-api' : '';
+// Auto-detect base path: if accessing /qwen3/, use /qwen3 as prefix
+const getBasePath = (): string => {
+  const pathname = window.location.pathname;
+  // Match /qwen3/, /qwen2.5/, /deepseek/, /llama-3.1/, /llama-3.3/, etc.
+  const match = pathname.match(/^\/(qwen3|qwen2\.5|deepseek|llama-3\.1|llama-3\.3)/);
+  return match ? `/${match[1]}` : '';
+};
+
+export const API_BASE_URL = import.meta.env.DEV ? '/proxy-api' : getBasePath();
 
 export const getModelList = async (): Promise<readonly any[]> => {
   const response = await fetch(`${API_BASE_URL}/model/list`, { method: 'GET' });

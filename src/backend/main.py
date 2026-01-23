@@ -701,9 +701,28 @@ async def scheduler_init(raw_request: Request):
         )
 
     try:
-        # If scheduler is already running, stop it first
+        # Check if scheduler is already running with the same model
         if scheduler_manage.is_running():
-            print(f"Stopping existing scheduler to switch to model: {model_name}")
+            current_model = scheduler_manage.get_model_name()
+            
+            # If already initialized with the requested model, return success without restarting
+            if current_model is not None:
+                print(f"Scheduler already running with model: {current_model}, skipping reinitialization")
+                return JSONResponse(
+                    content={
+                        "type": "scheduler_init",
+                        "data": {
+                            "model_name": model_name,
+                            "init_nodes_num": scheduler_manage.get_init_nodes_num(),
+                            "is_local_network": scheduler_manage.get_is_local_network(),
+                            "already_initialized": True,
+                        },
+                    },
+                    status_code=200,
+                )
+            
+            # Different model requested, need to stop and reinitialize
+            print(f"Stopping existing scheduler (current model: {current_model}) to switch to model: {model_name}")
             scheduler_manage.stop()
 
         # Start scheduler with new model
