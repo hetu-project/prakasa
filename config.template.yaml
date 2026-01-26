@@ -26,6 +26,8 @@ run:
   p2p_usage_api_url: https://nftkashai.online/subnet/subnet
   # Access code for P2P API
   access_code: null
+  # Access code for inference API (optional, no restriction if not set)
+  inference_access_code: null
   # Nostr configuration for scheduler node
   nostr:
     # nsec-encoded Nostr private key; if null, a new one will be generated on first run

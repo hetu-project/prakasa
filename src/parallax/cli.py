@@ -262,6 +262,8 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 setattr(args, "p2p_usage_api_url", cmd_conf.get("p2p_usage_api_url"))
             if not _cli_flag_provided(["--access-code"]) and "access_code" in cmd_conf:
                 setattr(args, "access_code", cmd_conf.get("access_code"))
+            if not _cli_flag_provided(["--inference-access-code"]) and "inference_access_code" in cmd_conf:
+                setattr(args, "inference_access_code", cmd_conf.get("inference_access_code"))
             if not _cli_flag_provided(["--agent-name"]) and "agent_name" in cmd_conf:
                 setattr(args, "agent_name", cmd_conf.get("agent_name"))
             if not _cli_flag_provided(["--agent-avatar"]) and "agent_avatar" in cmd_conf:
@@ -295,6 +297,12 @@ def load_and_merge_config(args, passthrough_args: list[str] | None = None):
                 if access_code_val:  # Only add if not null
                     passthrough_args = passthrough_args or []
                     passthrough_args.extend(["--access-code", str(access_code_val)])
+            # passthrough: inference_access_code
+            if "inference_access_code" in cmd_conf and not _flag_present(passthrough_args, ["--inference-access-code"]):
+                inference_access_code_val = cmd_conf.get("inference_access_code")
+                if inference_access_code_val:  # Only add if not null
+                    passthrough_args = passthrough_args or []
+                    passthrough_args.extend(["--inference-access-code", str(inference_access_code_val)])
             # passthrough: agent_name
             if "agent_name" in cmd_conf and not _flag_present(passthrough_args, ["--agent-name"]):
                 agent_name_val = cmd_conf.get("agent_name")

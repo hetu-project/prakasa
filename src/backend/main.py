@@ -836,6 +836,16 @@ async def get_node_status_by_account(account: str):
 
 @app.post("/v1/chat/completions")
 async def openai_v1_chat_completions(raw_request: Request):
+    # Check inference access code if configured
+    inference_code = getattr(args, "inference_access_code", None)
+    if inference_code:
+        provided_code = raw_request.headers.get("X-Access-Code") or raw_request.headers.get("Authorization", "").replace("Bearer ", "")
+        if provided_code != inference_code:
+            return JSONResponse(
+                content={"error": "Invalid or missing access code"},
+                status_code=403,
+            )
+    
     request_data = await raw_request.json()
     request_id = uuid.uuid4()
     received_ts = time.time()
