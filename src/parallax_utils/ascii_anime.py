@@ -107,8 +107,8 @@ def process_context_color_join(content, colors, model_name):
             if text in ("▝", "#", ".") and hex_color == "#000000":
                 if hex_color == "#000000":
                     text = " "
-            elif row == 7 and 9 <= column <= 38:
-                pos = column - 9
+            elif row == 7 and 19 <= column <= 48:
+                pos = column - 19
                 if pos < name_len:
                     text = model_name[pos]
                     processed_row += HexColorPrinter.RESET
@@ -127,7 +127,7 @@ def process_context_color_join(content, colors, model_name):
     return res
 
 
-def display_ascii_animation_run(animation_data):
+def display_ascii_animation_run(animation_data, clean_screen_flag=True):
     frames = animation_data.get("frames", [])
     # loop = animation_data.get('loop', False)
 
@@ -145,7 +145,8 @@ def display_ascii_animation_run(animation_data):
         if content:
             res = process_context_color_run(content, colors)
             res = "\n".join(res)
-            clear_screen()
+            if clean_screen_flag:
+                clear_screen()
             print(res)
 
     # for frame_data in frames:
@@ -163,7 +164,7 @@ def display_ascii_animation_run(animation_data):
     #         time.sleep(delay)
 
 
-def display_ascii_animation_join(animation_data, model_name):
+def display_ascii_animation_join(animation_data, model_name, clean_screen_flag=True):
     frames = animation_data.get("frames", [])
     # loop = animation_data.get('loop', False)
 
@@ -181,7 +182,8 @@ def display_ascii_animation_join(animation_data, model_name):
         if content:
             res = process_context_color_join(content, colors, model_name)
             res = "\n".join(res)
-            clear_screen()
+            if clean_screen_flag:
+                clear_screen()
             print(res)
 
     # for frame_data in frames:
@@ -199,7 +201,7 @@ def display_ascii_animation_join(animation_data, model_name):
     #         time.sleep(delay)
 
 
-def display_parallax_run():
+def display_parallax_run(clean_screen_flag=True):
     file_path = str(get_project_root()) + "/src/parallax_utils/anime/prakasa_run.json"
     try:
         with open(file_path, "r") as f:
@@ -210,10 +212,10 @@ def display_parallax_run():
     except json.JSONDecodeError:
         print(f"Error: The file '{file_path}' contains invalid JSON.")
         return
-    display_ascii_animation_run(animation_data)
+    display_ascii_animation_run(animation_data, clean_screen_flag=clean_screen_flag)
 
 
-def display_parallax_join(model_name):
+def display_parallax_join(model_name, clean_screen_flag=True):
     file_path = str(get_project_root()) + "/src/parallax_utils/anime/parallax_join.json"
     try:
         with open(file_path, "r") as f:
@@ -224,4 +226,4 @@ def display_parallax_join(model_name):
     except json.JSONDecodeError:
         print(f"Error: The file '{file_path}' contains invalid JSON.")
         return
-    display_ascii_animation_join(animation_data, model_name)
+    display_ascii_animation_join(animation_data, model_name, clean_screen_flag=clean_screen_flag)

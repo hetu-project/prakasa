@@ -29,7 +29,7 @@ from parallax.server.http_server import launch_http_server, stop_http_server
 from parallax.server.server_args import parse_args
 from parallax.utils.shared_state import SharedState
 from parallax.utils.utils import fetch_model_from_hf, initialize_nccl_port
-from parallax_utils.ascii_anime import display_parallax_join
+from parallax_utils.ascii_anime import display_parallax_join, display_parallax_run
 from parallax_utils.logging_config import get_logger, set_log_level
 from parallax_utils.version_check import check_latest_release
 
@@ -120,7 +120,8 @@ if __name__ == "__main__":
         logger.debug(f"nccl_port: {args.nccl_port}")
         if args.scheduler_addr is None:
             if args.log_level != "DEBUG":
-                display_parallax_join(args.model_path)
+                display_parallax_run()
+                display_parallax_join(args.model_path, clean_screen_flag=False)
             check_latest_release()
 
             config = fetch_model_from_hf(args.model_path, local_files_only=args.use_hfcache)
@@ -235,7 +236,8 @@ if __name__ == "__main__":
             )
 
             if args.log_level != "DEBUG":
-                display_parallax_join(args.model_path)
+                display_parallax_run()
+                display_parallax_join(args.model_path, clean_screen_flag=False)
             check_latest_release()
 
             # Main execution loop with layer reallocation support
